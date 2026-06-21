@@ -15,11 +15,13 @@ pub fn get_filenames_diff_at_workdir(repo: &Repository) -> Result<UncommittedCha
 
     let statuses = repo.statuses(Some(&mut options))?;
     let mut changes = UncommittedChanges::default();
-    let workdir = repo.workdir().expect("Bare repo not supported");
+    let Some(workdir) = repo.workdir() else {
+        return Ok(changes);
+    };
     let submodules = submodules_if_present(repo).unwrap_or_default();
     let submodule_paths = submodules.iter().map(|entry| entry.path().to_path_buf()).collect::<Vec<_>>();
 
-    for entry in statuses.iter() {
+
         let rel_path = entry.path().unwrap_or("");
         if is_submodule_status_path(rel_path, &submodule_paths) {
             continue;
