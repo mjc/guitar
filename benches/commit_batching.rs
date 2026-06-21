@@ -29,13 +29,13 @@ fn commit_batch_fixture(fixture: RepoWalkFixture) -> CommitBatchFixture {
     CommitBatchFixture { _fixture: fixture, batcher, _repo: repo, amount, expected_commits }
 }
 
-fn sorted_oid_pages(fixture: CommitBatchFixture) -> usize {
+fn sorted_oid_pages(mut fixture: CommitBatchFixture) -> usize {
     let mut oids = Oids::default();
     let mut sorted = Vec::new();
 
     loop {
         let before = sorted.len();
-        get_sorted_oids(&fixture.batcher, &mut oids, &mut sorted, fixture.amount);
+        get_sorted_oids(&mut fixture.batcher, &mut oids, &mut sorted, fixture.amount);
         if sorted.len() == before {
             break;
         }
