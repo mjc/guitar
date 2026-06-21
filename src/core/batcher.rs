@@ -2,32 +2,29 @@ use git2::{BranchType, Oid, Repository, Revwalk};
 use im::HashSet;
 use std::cell::RefCell;
 use std::collections::HashSet as StdHashSet;
-use std::{rc::Rc, sync::Mutex};
+use std::rc::Rc;
 
 // Own the revwalk cursor so commit history can be loaded in pages.
 pub struct Batcher {
-    revwalk: Mutex<Revwalk<'static>>,
+    revwalk: Revwalk<'static>,
 }
 
 impl Batcher {
     // Build the initial revwalk from all visible local and remote branch tips.
     pub fn new(repo: Rc<RefCell<Repository>>, hidden_branch_names: &HashSet<String>, extra_roots: &[Oid]) -> Result<Self, git2::Error> {
         let revwalk = Self::build(&repo.borrow(), hidden_branch_names, extra_roots)?;
-        Ok(Self { revwalk: Mutex::new(revwalk) })
+        Ok(Self { revwalk })
     }
 
     // Recreate the cursor after branch filters, fetches, or repository state changes.
-    pub fn reset(&self, repo: Rc<RefCell<Repository>>, hidden_branch_names: &HashSet<String>, extra_roots: &[Oid]) -> Result<(), git2::Error> {
-        let revwalk = Self::build(&repo.borrow(), hidden_branch_names, extra_roots)?;
-        let mut guard = self.revwalk.lock().unwrap();
-        *guard = revwalk;
+    pub fn reset(&mut self, repo: Rc<RefCell<Repository>>, hidden_branch_names: &HashSet<String>, extra_roots: &[Oid]) -> Result<(), git2::Error> {
+        self.revwalk = Self::build(&repo.borrow(), hidden_branch_names, extra_roots)?;
         Ok(())
     }
 
     // Pull the next page, dropping commits libgit2 cannot resolve.
-    pub fn next(&self, count: usize) -> Vec<Oid> {
-        let mut revwalk = self.revwalk.lock().unwrap();
-        revwalk.by_ref().take(count).filter_map(Result::ok).collect()
+    pub fn next(&mut self, count: usize) -> Vec<Oid> {
+        self.revwalk.by_ref().take(count).filter_map(Result::ok).collect()
     }
 
     fn build(repo: &Repository, hidden_branch_names: &HashSet<String>, extra_roots: &[Oid]) -> Result<Revwalk<'static>, git2::Error> {

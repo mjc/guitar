@@ -52,8 +52,7 @@ pub struct Walker {
 impl Walker {
     // Open the repository and seed all metadata that does not depend on walking commits.
     pub fn new(path: String, amount: usize, hidden_branch_names: HashSet<String>, include_head_reflog_roots: bool, graph_lane_limit: usize) -> Result<Self, git2::Error> {
-        let path = path.clone();
-        let repo = Rc::new(RefCell::new(Repository::open(path).expect("Failed to open repo")));
+        let repo = Rc::new(RefCell::new(Repository::open(path)?));
 
         let buffer = RefCell::new(Buffer::with_lane_limit(graph_lane_limit));
 
@@ -95,7 +94,7 @@ impl Walker {
             }
         }
 
-        let batcher = Batcher::new(repo.clone(), &hidden_branch_names, &head_reflog_roots).expect("Error");
+        let batcher = Batcher::new(repo.clone(), &hidden_branch_names, &head_reflog_roots)?;
 
         Ok(Self {
             repo,
@@ -131,8 +130,8 @@ impl Walker {
 
         let head_alias = self.oids.get_alias_by_oid(head_oid);
 
-        let mut sorted_batch: Vec<u32> = Vec::new();
-        get_sorted_oids(&self.batcher, &mut self.oids, &mut sorted_batch, self.amount);
+        let mut sorted_batch = Vec::new();
+        get_sorted_oids(&mut self.batcher, &mut self.oids, &mut sorted_batch, self.amount);
 
         // Alias NONE is rendered as the uncommitted row above HEAD.
         if self.oids.get_commit_count() == 1 {
@@ -153,7 +152,9 @@ impl Walker {
             let mut merger_alias: u32 = NONE;
             let mut transient_lane: Option<usize> = None;
             let oid = self.oids.get_oid_by_alias(alias);
-            let commit = repo.find_commit(*oid).unwrap();
+            let Ok(commit) = repo.find_commit(*oid) else {
+                continue;
+            };
 
             // Only two parents are modeled because the renderer draws one merge edge.
             let mut parents_iter = commit.parent_ids();
