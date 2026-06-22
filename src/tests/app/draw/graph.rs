@@ -6,13 +6,12 @@ use crate::{
     },
     core::{
         chunk::NONE,
-        graph_service::{GraphCommand, GraphFileHistoryRow, GraphHistory, GraphRow, GraphSnapshot},
+        graph_service::{GraphCommand, GraphFileHistoryRow, GraphHistory, GraphRow},
     },
     git::queries::helpers::FileStatus,
     helpers::symbols::SymbolTheme,
 };
 use git2::{Oid, Repository, Signature};
-use im::Vector;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 use std::{
     fs,
@@ -55,7 +54,6 @@ fn graph_row(index: usize, alias: u32, oid: Oid, summary: &str) -> GraphRow {
         summary: summary.to_string(),
         committer_date: String::new(),
         committer_name: String::new(),
-        is_merge: false,
         has_any_branch: false,
         branches: Vec::new(),
         tags: Vec::new(),
@@ -92,11 +90,7 @@ fn app_with_cached_window(start: usize, summaries: &[&str], oid: Oid) -> App {
 }
 
 fn graph_history(len: usize) -> GraphHistory {
-    let mut history = Vector::new();
-    for _ in 0..len {
-        history.push_back(GraphSnapshot::default());
-    }
-    history
+    GraphHistory::from_rows((0..len).map(|_| Vec::new()))
 }
 
 fn app_with_uncommitted_window(window_end: usize, history_len: usize, oid: Oid) -> App {
