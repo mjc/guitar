@@ -125,6 +125,27 @@ fn search_history_row(graph_index: usize, oid: git2::Oid) -> GraphFileHistoryRow
     GraphFileHistoryRow { graph_index, oid, short_oid: oid.to_string()[..8].to_string(), summary: "history".to_string(), status: FileStatus::Modified }
 }
 
+fn graph_row(index: usize, alias: u32, oid: git2::Oid, summary: &str, reflog: Option<GraphReflogLabel>) -> GraphRow {
+    GraphRow {
+        index,
+        alias,
+        oid,
+        short_oid: oid.to_string()[..9].to_string(),
+        summary: summary.to_string(),
+        committer_date: String::new(),
+        committer_name: String::new(),
+        is_merge: false,
+        has_any_branch: false,
+        branches: Vec::new(),
+        tags: Vec::new(),
+        is_stash: false,
+        stash_lane: None,
+        worktrees: Vec::new(),
+        has_current_worktree: false,
+        reflog,
+    }
+}
+
 fn branch_app() -> App {
     let mut app = App { path: Some(temp_non_repo_path("branches")), viewport: Viewport::Graph, ..Default::default() };
     app.branches.sorted = vec![(0, "feature".to_string()), (1, "main".to_string())];
@@ -815,23 +836,7 @@ fn zen_graph_narrow_promotes_cached_window_row_before_opening_inspector() {
         start: 42,
         end: 43,
         head_alias: 99,
-        rows: vec![GraphRow {
-            index: 42,
-            alias: 99,
-            oid,
-            short_oid: oid.to_string()[..9].to_string(),
-            summary: "cached".to_string(),
-            committer_date: String::new(),
-            committer_name: String::new(),
-            is_merge: false,
-            has_any_branch: false,
-            branches: Vec::new(),
-            tags: Vec::new(),
-            is_stash: false,
-            stash_lane: None,
-            worktrees: Vec::new(),
-            reflog: None,
-        }],
+        rows: vec![graph_row(42, 99, oid, "cached", None)],
         history: Default::default(),
     });
 
@@ -862,23 +867,13 @@ fn graph_row_lookup_result_opens_inspector_with_reflog() {
         .send(GraphEvent::LookupResult {
             generation: 7,
             request_id: 3,
-            result: GraphLookupResult::GraphRow(Some(GraphRow {
-                index: 42,
-                alias: 99,
+            result: GraphLookupResult::GraphRow(Some(graph_row(
+                42,
+                99,
                 oid,
-                short_oid: oid.to_string()[..9].to_string(),
-                summary: "commit".to_string(),
-                committer_date: String::new(),
-                committer_name: String::new(),
-                is_merge: false,
-                has_any_branch: false,
-                branches: Vec::new(),
-                tags: Vec::new(),
-                is_stash: false,
-                stash_lane: None,
-                worktrees: Vec::new(),
-                reflog: Some(GraphReflogLabel { selector: "HEAD@{0}".to_string(), message: "commit: commit".to_string(), lane: Some(LaneRef::new(2, false)) }),
-            })),
+                "commit",
+                Some(GraphReflogLabel { selector: "HEAD@{0}".to_string(), message: "commit: commit".to_string(), lane: Some(LaneRef::new(2, false)) }),
+            ))),
         })
         .unwrap();
     app.sync(&repo);
