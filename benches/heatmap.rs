@@ -3,6 +3,7 @@ mod fixtures;
 use divan::{Bencher, black_box};
 use fixtures::{GraphServiceFixture, TempFixture, graph_service_fixture};
 use git2::{IndexAddOption, Oid, Repository, Signature, Time};
+use guitar::core::oids::git2_to_gix_oid;
 use guitar::helpers::heatmap::{HeatmapCounts, build_heatmap};
 use std::{fs, path::Path};
 
@@ -14,7 +15,7 @@ struct HeatmapFixture {
     _graph_fixture: Option<GraphServiceFixture>,
     _temp_fixture: Option<TempFixture>,
     repo: gix::Repository,
-    oids: Vec<Oid>,
+    oids: Vec<gix::ObjectId>,
     seconds: Vec<i64>,
 }
 
@@ -23,6 +24,7 @@ fn heatmap_fixture(rounds: usize) -> HeatmapFixture {
     let git2_repo = Repository::open(&fixture.path).unwrap();
     let oids = collect_reachable_oids(&git2_repo);
     let seconds = collect_commit_seconds(&git2_repo, &oids);
+    let oids = oids.into_iter().map(git2_to_gix_oid).collect();
     let repo = gix::open(&fixture.path).unwrap();
 
     HeatmapFixture { _graph_fixture: Some(fixture), _temp_fixture: None, repo, oids, seconds }
@@ -59,6 +61,7 @@ fn dated_heatmap_fixture(recent_commits: usize, old_commits: usize) -> HeatmapFi
     let mut oids = recent_oids;
     oids.extend(old_oids);
     let seconds = collect_commit_seconds(&repo, &oids);
+    let oids = oids.into_iter().map(git2_to_gix_oid).collect();
     let gix_repo = gix::open(fixture.path()).unwrap();
 
     HeatmapFixture { _graph_fixture: None, _temp_fixture: Some(fixture), repo: gix_repo, oids, seconds }
@@ -88,7 +91,7 @@ fn heatmap_build_medium(bencher: Bencher<'_, '_>) {
     let fixture = heatmap_fixture(256);
     let commits = fixture.oids.len() as u64;
 
-    bencher.counter(divan::counter::ItemsCount::new(commits)).bench_local(|| black_box(build_heatmap(&fixture.repo, &fixture.oids)));
+    bencher.counter(divan::counter::ItemsCount::new(commits)).bench_local(|| black_box(build_heatmap(&fixture.repo, fixture.oids.iter().copied())));
 }
 
 #[divan::bench(sample_count = 30, sample_size = 10)]
@@ -96,7 +99,7 @@ fn heatmap_build_with_old_tail(bencher: Bencher<'_, '_>) {
     let fixture = dated_heatmap_fixture(32, 512);
     let commits = fixture.oids.len() as u64;
 
-    bencher.counter(divan::counter::ItemsCount::new(commits)).bench_local(|| black_box(build_heatmap(&fixture.repo, &fixture.oids)));
+    bencher.counter(divan::counter::ItemsCount::new(commits)).bench_local(|| black_box(build_heatmap(&fixture.repo, fixture.oids.iter().copied())));
 }
 
 #[divan::bench(sample_count = 30, sample_size = 100)]

@@ -1,10 +1,9 @@
 use crate::{
-    core::oids::{Oids, git2_to_gix_oid},
+    core::oids::Oids,
     helpers::{palette::Theme, symbols::SymbolTheme},
 };
 use chrono::{Datelike, NaiveDate};
 use chrono::{TimeZone, Utc};
-use git2::Oid;
 use gix::prelude::FindExt;
 use ratatui::{style::Style, text::Span};
 
@@ -43,15 +42,7 @@ impl HeatmapCounts {
     }
 }
 
-pub fn commits_per_day(repo: &gix::Repository, oids: &[Oid]) -> [usize; TOTAL_DAYS] {
-    commits_per_day_in_order(repo, oids.iter().copied())
-}
-
-fn commits_per_day_in_order(repo: &gix::Repository, oids: impl IntoIterator<Item = Oid>) -> [usize; TOTAL_DAYS] {
-    commits_per_day_in_gix_order(repo, oids.into_iter().map(git2_to_gix_oid))
-}
-
-fn commits_per_day_in_gix_order(repo: &gix::Repository, oids: impl IntoIterator<Item = gix::ObjectId>) -> [usize; TOTAL_DAYS] {
+pub fn commits_per_day(repo: &gix::Repository, oids: impl IntoIterator<Item = gix::ObjectId>) -> [usize; TOTAL_DAYS] {
     // Use UTC dates so commits near midnight are bucketed consistently.
     let today: NaiveDate = Utc::now().date_naive();
     let mut counts = [0usize; TOTAL_DAYS];
@@ -91,12 +82,12 @@ pub fn empty_heatmap() -> [[usize; WEEKS]; DAYS] {
     [[0usize; WEEKS]; DAYS]
 }
 
-pub fn build_heatmap(repo: &gix::Repository, oids: &[Oid]) -> [[usize; WEEKS]; DAYS] {
+pub fn build_heatmap(repo: &gix::Repository, oids: impl IntoIterator<Item = gix::ObjectId>) -> [[usize; WEEKS]; DAYS] {
     build_heatmap_from_counts(commits_per_day(repo, oids))
 }
 
 pub fn build_heatmap_from_sorted_aliases(repo: &gix::Repository, oids: &Oids) -> [[usize; WEEKS]; DAYS] {
-    build_heatmap_from_counts(commits_per_day_in_gix_order(repo, oids.get_sorted_aliases().iter().map(|alias| *oids.get_oid_by_alias(*alias))))
+    build_heatmap_from_counts(commits_per_day(repo, oids.get_sorted_aliases().iter().map(|alias| *oids.get_oid_by_alias(*alias))))
 }
 
 fn build_heatmap_from_counts(counts: [usize; TOTAL_DAYS]) -> [[usize; WEEKS]; DAYS] {

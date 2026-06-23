@@ -1,5 +1,6 @@
 use super::*;
-use git2::{IndexAddOption, Repository, Signature, Time};
+use crate::core::oids::git2_to_gix_oid as gix_oid;
+use git2::{IndexAddOption, Oid, Repository, Signature, Time};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -39,7 +40,7 @@ fn commits_per_day_counts_rendered_dates_without_allocating_a_map() {
     let old = commit_at(&repo, &path, "old.txt", outside_grid);
 
     let gix_repo = gix::open(&path).unwrap();
-    let counts = commits_per_day(&gix_repo, &[first, second, old]);
+    let counts = commits_per_day(&gix_repo, [first, second, old].map(gix_oid));
 
     assert_eq!(counts[0], 2);
     assert_eq!(counts.iter().sum::<usize>(), 2);
@@ -55,7 +56,7 @@ fn commits_per_day_stops_after_first_commit_older_than_rendered_grid() {
     let would_count_if_scanned = commit_at(&repo, &path, "newer-after-old.txt", today);
 
     let gix_repo = gix::open(&path).unwrap();
-    let counts = commits_per_day(&gix_repo, &[recent, old, would_count_if_scanned]);
+    let counts = commits_per_day(&gix_repo, [recent, old, would_count_if_scanned].map(gix_oid));
 
     assert_eq!(counts[0], 1);
     assert_eq!(counts.iter().sum::<usize>(), 1);
@@ -66,7 +67,7 @@ fn build_heatmap_places_today_in_the_newest_week() {
     let (path, repo) = temp_repo("grid");
     let oid = commit_at(&repo, &path, "today.txt", Utc::now().timestamp());
     let gix_repo = gix::open(&path).unwrap();
-    let grid = build_heatmap(&gix_repo, &[oid]);
+    let grid = build_heatmap(&gix_repo, [gix_oid(oid)]);
     let weekday_today = Utc::now().weekday().num_days_from_monday() as usize;
 
     assert_eq!(grid[weekday_today][WEEKS - 1], 1);
@@ -81,7 +82,7 @@ fn streamed_heatmap_counts_match_commit_scan_for_recent_commits() {
     let second = commit_at(&repo, &path, "yesterday.txt", yesterday);
 
     let gix_repo = gix::open(&path).unwrap();
-    let scanned = build_heatmap(&gix_repo, &[first, second]);
+    let scanned = build_heatmap(&gix_repo, [first, second].map(gix_oid));
     let mut streamed = HeatmapCounts::default();
     streamed.add_commit_seconds(today);
     streamed.add_commit_seconds(yesterday);

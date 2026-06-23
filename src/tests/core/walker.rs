@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    core::{graph_service::GraphRow, oids::{Oids, gix_to_git2_oid}, renderers::render_graph_projection},
+    core::{graph_service::GraphRow, oids::{Oids, git2_to_gix_oid, gix_to_git2_oid}, renderers::render_graph_projection},
     git::actions::worktrees::create_worktree,
     git::queries::{
         commits::{get_stashed_commits, get_tag_oids, get_tip_oids},
@@ -203,7 +203,7 @@ fn graph_metadata_from_current_backend(path: &Path) -> HashMap<Oid, CommitMetada
 
 fn graph_metadata_from_gitoxide(path: &Path, roots: &[Oid]) -> HashMap<Oid, CommitMetadata> {
     let repo = gix::open(path).unwrap();
-    let tips = roots.iter().map(|oid| gix::ObjectId::from_bytes_or_panic(oid.as_bytes())).collect::<Vec<_>>();
+    let tips = roots.iter().copied().map(git2_to_gix_oid).collect::<Vec<_>>();
     let topo = GixTopoBuilder::new(&repo.objects).with_tips(tips).sorting(GixTopoSorting::TopoOrder).build().unwrap();
 
     topo.map(|result| {
