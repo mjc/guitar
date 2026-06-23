@@ -563,14 +563,7 @@ pub fn render_committer_projection(theme: &Theme, rows: &[GraphRow], selected: u
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_message_projection(
-    theme: &Theme,
-    symbols: &SymbolTheme,
-    rows: &[GraphRow],
-    show_reflog_labels: bool,
-    show_ref_labels: bool,
-    selected: usize,
-    uncommitted: &UncommittedChanges,
-    render_uncommitted_row: bool,
+    theme: &Theme, symbols: &SymbolTheme, rows: &[GraphRow], show_reflog_labels: bool, show_ref_labels: bool, selected: usize, uncommitted: &UncommittedChanges, render_uncommitted_row: bool,
 ) -> Vec<Line<'static>> {
     let color_picker = ColorPicker::from_theme(theme);
     let branch_symbols = &symbols.branch;
