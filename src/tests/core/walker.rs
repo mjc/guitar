@@ -122,7 +122,7 @@ fn commit_metadata_from_repo(repo: &gix::Repository, oid: gix::ObjectId) -> Comm
 fn collect_root_oids(repo: &mut Repository, include_head_reflog_roots: bool) -> Vec<Oid> {
     let mut oids = Oids::default();
     let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
-    let (branches_local, branches_remote) = get_tip_oids(&gix_repo, &mut oids);
+    let (branches_local, branches_remote, _) = get_tip_oids(&gix_repo, &mut oids, &HashSet::new());
     let tags_local = tag_oids_via_libgit2(repo, &mut oids);
     let stashes = get_stashed_commits(&gix_repo, &mut oids);
     let mut aliases: StdHashSet<u32> = branches_local.keys().copied().chain(branches_remote.keys().copied()).chain(tags_local.keys().copied()).chain(stashes).collect();

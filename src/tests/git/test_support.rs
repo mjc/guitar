@@ -285,7 +285,7 @@ fn tag_fixture_maps_commit_tags_and_ignores_blob_tags() {
 
     let mut oids = Oids::default();
     let gix_repo = gix::open(dir.join("repo")).unwrap();
-    let (local_tips, remote_tips) = get_tip_oids(&gix_repo, &mut oids);
+    let (local_tips, remote_tips, _) = get_tip_oids(&gix_repo, &mut oids, &HashSet::new());
     let alias = oids.get_alias_by_oid(commit);
     let current_branch = get_current_branch(&repo).unwrap();
     assert!(local_tips.get(&alias).unwrap().contains(&current_branch));

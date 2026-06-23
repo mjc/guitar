@@ -159,6 +159,13 @@ impl DeltaLog {
         }
         self.op_chunks.shrink_to_fit();
     }
+
+    fn reserve_entries(&mut self, entries: usize) {
+        let chunk_count = entries.div_ceil(DELTA_CHUNK_SIZE);
+        if chunk_count > self.chunks.capacity() {
+            self.chunks.reserve(chunk_count - self.chunks.capacity());
+        }
+    }
 }
 
 struct DeltaView<'a> {
@@ -395,6 +402,14 @@ impl Buffer {
         let idx = self.deltas.len().saturating_sub(1);
         if idx.is_multiple_of(CHECKPOINT_INTERVAL) {
             self.checkpoints.push(Checkpoint { idx, curr: self.curr.clone() });
+        }
+    }
+
+    pub fn reserve_history(&mut self, commits: usize) {
+        self.deltas.reserve_entries(commits);
+        let checkpoint_count = commits.div_ceil(CHECKPOINT_INTERVAL);
+        if checkpoint_count > self.checkpoints.capacity() {
+            self.checkpoints.reserve(checkpoint_count - self.checkpoints.capacity());
         }
     }
 

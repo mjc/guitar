@@ -10,6 +10,10 @@ pub fn commit_graph_if_available(repo: &gix::Repository) -> Option<gix::commitgr
     repo.commit_graph_if_enabled().ok().flatten()
 }
 
+pub fn history_commit_count_hint(repo: &gix::Repository) -> Option<usize> {
+    commit_graph_if_available(repo).map(|graph| graph.num_commits() as usize)
+}
+
 pub fn for_each_branch_tip(repo: &gix::Repository, mut visit: impl FnMut(bool, &str, gix::ObjectId)) -> Result<(), git2::Error> {
     let references = repo.references().map_err(gix_error)?;
     for (is_local, references) in [(true, references.local_branches()), (false, references.remote_branches())] {

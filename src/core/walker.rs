@@ -5,7 +5,7 @@ use crate::{
         chunk::{Chunk, LaneRef, NONE},
         oids::Oids,
     },
-    git::gix::{enable_history_object_cache, gix_error},
+    git::gix::{enable_history_object_cache, gix_error, history_commit_count_hint},
     git::queries::commits::{get_sorted_oids, get_stashed_commits, get_tag_oids, get_tip_oids},
     git::queries::reflogs::{HeadReflogEntry, get_head_reflog_entries},
     helpers::heatmap::HeatmapCounts,
@@ -41,6 +41,7 @@ pub struct Walker {
     pub reflogs_lanes: HashMap<u32, LaneRef>,
     pub head_reflog_entries: Vec<HeadReflogEntry>,
     pub heatmap_counts: HeatmapCounts,
+    head_alias: Option<u32>,
     stash_aliases: StdHashSet<u32>,
     reflog_aliases: StdHashSet<u32>,
     stash_parent_aliases: Vec<(u32, u32)>,
@@ -56,6 +57,7 @@ impl Walker {
     pub fn new(path: String, amount: usize, hidden_branch_names: HashSet<String>, include_head_reflog_roots: bool, graph_lane_limit: usize) -> Result<Self, git2::Error> {
         let mut gix_repo = gix::open(path).map_err(gix_error)?;
         enable_history_object_cache(&mut gix_repo);
+        let history_commit_hint = history_commit_count_hint(&gix_repo);
 
         let buffer = RefCell::new(Buffer::with_lane_limit(graph_lane_limit));
 
@@ -63,7 +65,7 @@ impl Walker {
 
         // Branch and tag tips are registered before walking so aliases are stable.
         let branches_lanes = HashMap::new();
-        let (branches_local, branches_remote) = get_tip_oids(&gix_repo, &mut oids);
+        let (branches_local, branches_remote, mut branch_tips) = get_tip_oids(&gix_repo, &mut oids, &hidden_branch_names);
 
         let tags_lanes = HashMap::new();
         let tags_local = get_tag_oids(&gix_repo, &mut oids);
@@ -84,6 +86,11 @@ impl Walker {
         }
 
         let head_reflog_entries = get_head_reflog_entries(&gix_repo).unwrap_or_default();
+        if let Some(commit_hint) = history_commit_hint {
+            let alias_hint = commit_hint.saturating_add(tags_local.len()).saturating_add(oids.stashes.len()).saturating_add(head_reflog_entries.len());
+            oids.reserve_total_aliases(alias_hint);
+            buffer.borrow_mut().reserve_history(commit_hint);
+        }
         let mut head_reflog_roots = Vec::new();
         let mut reflog_aliases = StdHashSet::new();
         for entry in &head_reflog_entries {
@@ -100,7 +107,10 @@ impl Walker {
         extra_roots.extend(oids.stashes.iter().copied().map(|alias| *oids.get_oid_by_alias(alias)));
         extra_roots.extend(head_reflog_roots);
 
-        let batcher = Batcher::new(&gix_repo, &hidden_branch_names, extra_roots)?;
+        let mut pushed: StdHashSet<_> = branch_tips.iter().copied().collect();
+        branch_tips.extend(extra_roots.into_iter().filter(|oid| pushed.insert(*oid)));
+        let batcher = Batcher::from_tips(&gix_repo, branch_tips)?;
+        let head_alias = gix_repo.head_id().ok().map(|oid| oids.get_alias_by_oid(oid.detach()));
         let sorted_batch_capacity = amount.saturating_add(oids.stashes.len());
 
         Ok(Self {
@@ -117,6 +127,7 @@ impl Walker {
             reflogs_lanes,
             head_reflog_entries,
             heatmap_counts: HeatmapCounts::default(),
+            head_alias,
             stash_aliases,
             reflog_aliases,
             stash_parent_aliases,
@@ -129,14 +140,9 @@ impl Walker {
     // Process one revwalk page and update lane snapshots for the renderer.
     pub fn walk(&mut self) -> bool {
         // Without HEAD there is no stable parent for the uncommitted pseudo-row.
-        let head_oid = match self.gix_repo.head_id().ok() {
-            Some(oid) => oid.detach(),
-            None => {
-                return false;
-            },
+        let Some(head_alias) = self.head_alias else {
+            return false;
         };
-
-        let head_alias = self.oids.get_alias_by_oid(head_oid);
 
         self.sorted_batch.clear();
         get_sorted_oids(&mut self.batcher, &mut self.oids, &mut self.sorted_batch, self.amount, &mut self.oid_batch);
@@ -178,8 +184,8 @@ impl Walker {
                 debug_assert_eq!(self.oids.get_existing_alias(commit.oid), Some(alias));
 
                 // Only two parents are modeled because the renderer draws one merge edge.
-                let parent_a_oid = commit.parent_ids.first().copied();
-                let parent_b_oid = commit.parent_ids.get(1).copied();
+                let parent_a_oid = commit.first_parent();
+                let parent_b_oid = commit.second_parent();
                 (parent_a_oid.map(|p| self.oids.get_alias_by_oid(p)).unwrap_or(NONE), parent_b_oid.map(|p| self.oids.get_alias_by_oid(p)).unwrap_or(NONE))
             };
 

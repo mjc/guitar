@@ -152,3 +152,22 @@ fn insertion_after_compaction_rematerializes_hash_index() {
     assert_eq!(oids.get_existing_alias(first), Some(first_alias));
     assert_eq!(oids.get_existing_alias(second), Some(second_alias));
 }
+
+#[test]
+fn reserve_aliases_preallocates_sorted_aliases() {
+    let mut oids = Oids::default();
+
+    oids.reserve_aliases(256);
+
+    assert!(oids.sorted_aliases.capacity() >= 257);
+}
+
+#[test]
+fn reserve_total_aliases_preallocates_hash_and_sorted_storage() {
+    let mut oids = Oids::default();
+
+    oids.reserve_total_aliases(256);
+
+    assert!(oids.sorted_aliases.capacity() >= 257);
+    assert!(oids.oids.capacity() >= 256);
+}

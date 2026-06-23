@@ -67,6 +67,21 @@ impl OidStore {
         if needed_chunks > self.chunks.capacity() {
             self.chunks.reserve(needed_chunks - self.chunks.capacity());
         }
+
+        if additional == 0 {
+            return;
+        }
+
+        match self.chunks.last_mut() {
+            Some(chunk) => {
+                let chunk_target = chunk.len().saturating_add(additional).min(OID_CHUNK_SIZE);
+                let chunk_spare = chunk.capacity().saturating_sub(chunk.len());
+                if chunk_target > chunk.len() + chunk_spare {
+                    chunk.reserve(chunk_target - chunk.len() - chunk_spare);
+                }
+            },
+            None => self.chunks.push(Vec::with_capacity(additional.min(OID_CHUNK_SIZE))),
+        }
     }
 
     fn push(&mut self, oid: ObjectId) {
@@ -201,14 +216,41 @@ impl Default for Oids {
 }
 
 impl Oids {
+    pub fn reserve_total_aliases(&mut self, total: usize) {
+        let oid_spare = self.oids.capacity().saturating_sub(self.oids.len());
+        if total > self.oids.len() + oid_spare {
+            self.oids.reserve(total - self.oids.len() - oid_spare);
+        }
+
+        let sorted_target = total.saturating_add(1);
+        let sorted_spare = self.sorted_aliases.capacity().saturating_sub(self.sorted_aliases.len());
+        if sorted_target > self.sorted_aliases.len() + sorted_spare {
+            self.sorted_aliases.reserve(sorted_target - self.sorted_aliases.len() - sorted_spare);
+        }
+
+        let aliases = self.aliases.ensure_hash();
+        let alias_spare = aliases.capacity().saturating_sub(aliases.len());
+        if total > aliases.len() + alias_spare {
+            aliases.reserve(total - aliases.len() - alias_spare);
+        }
+    }
+
     pub fn reserve_aliases(&mut self, additional: usize) {
         let oid_spare = self.oids.capacity().saturating_sub(self.oids.len());
         if additional > oid_spare {
             self.oids.reserve(additional - oid_spare);
         }
 
-        // The hash index is compacted after the walk; preallocating it at Linux scale
-        // creates a large transient peak for little benefit.
+        let sorted_spare = self.sorted_aliases.capacity().saturating_sub(self.sorted_aliases.len());
+        if additional > sorted_spare {
+            self.sorted_aliases.reserve(additional - sorted_spare);
+        }
+
+        let aliases = self.aliases.ensure_hash();
+        let alias_spare = aliases.capacity().saturating_sub(aliases.len());
+        if additional > alias_spare {
+            aliases.reserve(additional - alias_spare);
+        }
     }
 
     pub fn compact_alias_index(&mut self) {

@@ -5,19 +5,25 @@ use crate::core::{
 use crate::git::gix::for_each_branch_tip;
 use git2::Repository;
 use gix::prelude::HeaderExt;
-use std::collections::HashMap;
+use im::HashSet;
+use std::collections::{HashMap, HashSet as StdHashSet};
 
 // Map each ref tip to the compact alias used by the graph renderer.
-pub fn get_tip_oids(repo: &gix::Repository, oids: &mut Oids) -> (HashMap<u32, Vec<String>>, HashMap<u32, Vec<String>>) {
+pub fn get_tip_oids(repo: &gix::Repository, oids: &mut Oids, hidden_branch_names: &HashSet<String>) -> (HashMap<u32, Vec<String>>, HashMap<u32, Vec<String>>, Vec<gix::ObjectId>) {
     let mut local: HashMap<u32, Vec<String>> = HashMap::new();
     let mut remote: HashMap<u32, Vec<String>> = HashMap::new();
+    let mut visible_roots = Vec::new();
+    let mut visible_root_set = StdHashSet::new();
 
     let _ = for_each_branch_tip(repo, |is_local, name, oid| {
         let bucket = if is_local { &mut local } else { &mut remote };
         bucket.entry(oids.get_alias_by_oid(oid)).or_default().push(name.to_string());
+        if !hidden_branch_names.contains(name) && visible_root_set.insert(oid) {
+            visible_roots.push(oid);
+        }
     });
 
-    (local, remote)
+    (local, remote, visible_roots)
 }
 
 // Map lightweight and annotated tags to the commit aliases they resolve to.
