@@ -1,3 +1,4 @@
+use crate::git::gix::gix_error;
 use gix::{bstr::ByteSlice, remote};
 use std::path::Path;
 
@@ -52,20 +53,19 @@ fn resolve_effective_default_remote(repo: &gix::Repository, remotes: &[RemoteEnt
 }
 
 fn open_repo(path: impl AsRef<Path>) -> Result<gix::Repository, git2::Error> {
-    gix::open(path.as_ref()).map_err(|error| git2::Error::from_str(&error.to_string()))
+    gix::open(path.as_ref()).map_err(gix_error)
 }
 
 fn list_remotes_from_repo(repo: &gix::Repository) -> Result<Vec<RemoteEntry>, git2::Error> {
-    let mut entries = Vec::new();
-
-    for name in repo.remote_names() {
-        let Some(name) = name.to_str().ok().map(str::to_string) else {
-            continue;
-        };
-        let remote = repo.find_remote(name.as_str()).map_err(|error| git2::Error::from_str(&error.to_string()))?;
-        let push_url = remote_push_url(repo, &name);
-        entries.push(RemoteEntry { name, url: remote.url(remote::Direction::Fetch).map(|url| url.to_string()).unwrap_or_default(), push_url });
-    }
+    let mut entries: Vec<_> = repo
+        .remote_names()
+        .into_iter()
+        .filter_map(|name| name.to_str().ok().map(str::to_string))
+        .map(|name| {
+            let remote = repo.find_remote(name.as_str()).map_err(gix_error)?;
+            Ok(RemoteEntry { push_url: remote_push_url(repo, &name), name, url: remote.url(remote::Direction::Fetch).map(|url| url.to_string()).unwrap_or_default() })
+        })
+        .collect::<Result<_, git2::Error>>()?;
 
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(entries)

@@ -831,14 +831,7 @@ fn zen_graph_narrow_promotes_cached_window_row_before_opening_inspector() {
     app.graph.total = 43;
     app.graph_selected = 42;
     app.layout_config.is_zen = true;
-    app.graph.graph_window = Some(GraphWindowCache {
-        version: 1,
-        start: 42,
-        end: 43,
-        head_alias: 99,
-        rows: vec![graph_row(42, 99, oid, "cached", None)],
-        history: Default::default(),
-    });
+    app.graph.graph_window = Some(GraphWindowCache { version: 1, start: 42, end: 43, head_alias: 99, rows: vec![graph_row(42, 99, oid, "cached", None)], history: Default::default() });
 
     app.on_narrow_scope();
 

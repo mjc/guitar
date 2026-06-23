@@ -1,4 +1,4 @@
-use crate::core::submodules::SubmoduleEntry;
+use crate::{core::submodules::SubmoduleEntry, git::gix::gix_error};
 use git2::Repository;
 use gix::bstr::ByteSlice;
 use std::fs::File;
@@ -11,7 +11,7 @@ const GITMODULES_OVERLAP: usize = 10;
 
 fn open_repo(repo: &Repository) -> Result<gix::Repository, git2::Error> {
     let path = repo.workdir().unwrap_or(repo.path());
-    gix::open(path).map_err(|error| git2::Error::from_str(&error.to_string()))
+    gix::open(path).map_err(gix_error)
 }
 
 fn current_branch(repo: &gix::Repository) -> Option<String> {
@@ -139,7 +139,7 @@ pub fn list_submodules(repo: &Repository) -> Result<Vec<SubmoduleEntry>, git2::E
     let workdir = repo.workdir().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     let mut entries = Vec::new();
 
-    let Some(submodules) = gix_repo.submodules().map_err(|error| git2::Error::from_str(&error.to_string()))? else {
+    let Some(submodules) = gix_repo.submodules().map_err(gix_error)? else {
         return Ok(entries);
     };
 

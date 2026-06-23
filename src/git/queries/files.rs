@@ -1,3 +1,4 @@
+use crate::git::gix::gix_error;
 use git2::Repository;
 use std::{collections::HashSet, path::Path};
 
@@ -29,7 +30,7 @@ pub fn search_tracked_files(repo: &Repository, query: &str, limit: usize) -> Res
         return Ok(Vec::new());
     }
 
-    let gix_repo = gix::open(workdir).map_err(|error| git2::Error::from_str(&error.to_string()))?;
+    let gix_repo = gix::open(workdir).map_err(gix_error)?;
     let paths = tracked_file_paths_from_repo(&gix_repo)?;
 
     Ok(rank_file_paths(&paths, query, limit))
@@ -40,7 +41,7 @@ fn tracked_file_paths_from_repo(repo: &gix::Repository) -> Result<Vec<String>, g
         return Ok(Vec::new());
     };
 
-    let index = repo.index().map_err(|error| git2::Error::from_str(&error.to_string()))?;
+    let index = repo.index().map_err(gix_error)?;
     let mut seen = HashSet::new();
     let mut paths = Vec::new();
 

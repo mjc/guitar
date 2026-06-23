@@ -1,4 +1,7 @@
-use crate::{core::oids::IntoGixOid, git::gix::commit_graph_if_available, helpers::branch_visibility::branch_name_from_ref};
+use crate::{
+    core::oids::IntoGixOid,
+    git::gix::{commit_graph_if_available, for_each_branch_tip, gix_error},
+};
 use gix::traverse::commit::ParentIds;
 use im::HashSet;
 use std::collections::HashSet as StdHashSet;
@@ -60,33 +63,20 @@ impl Batcher {
         let mut pushed: StdHashSet<gix::ObjectId> = StdHashSet::new();
         let mut tips: Vec<gix::ObjectId> = Vec::new();
 
-        let references = repo.references().map_err(|error| git2::Error::from_str(&error.to_string()))?;
-        for references in [references.local_branches(), references.remote_branches()] {
-            let references = references.map_err(|error| git2::Error::from_str(&error.to_string()))?;
-
-            for reference in references {
-                let Ok(reference) = reference else { continue };
-                let Some(name) = branch_name_from_ref(reference.name().as_bstr()) else { continue };
-                let Some(oid) = reference.try_id().map(|id| id.detach()) else { continue };
-
-                // Hidden branch names are a deny-list; new branches are visible by default.
-                if !hidden_branch_names.contains(name) && pushed.insert(oid) {
-                    tips.push(oid);
-                }
-            }
-        }
-
-        for oid in extra_roots.into_iter().map(IntoGixOid::into_gix_oid) {
-            if pushed.insert(oid) {
+        for_each_branch_tip(repo, |_, name, oid| {
+            // Hidden branch names are a deny-list; new branches are visible by default.
+            if !hidden_branch_names.contains(name) && pushed.insert(oid) {
                 tips.push(oid);
             }
-        }
+        })?;
+
+        tips.extend(extra_roots.into_iter().map(IntoGixOid::into_gix_oid).filter(|oid| pushed.insert(*oid)));
 
         let commit_graph = commit_graph_if_available(repo);
         let walk = gix::traverse::commit::Simple::new(tips, repo.objects.clone())
             .sorting(gix::traverse::commit::simple::Sorting::ByCommitTime(gix::traverse::commit::simple::CommitTimeOrder::NewestFirst))
             .map(|walk| walk.commit_graph(commit_graph))
-            .map_err(|error| git2::Error::from_str(&error.to_string()))?;
+            .map_err(gix_error)?;
         Ok(walk)
     }
 }

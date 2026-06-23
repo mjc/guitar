@@ -1,3 +1,5 @@
+use crate::git::gix::gix_error;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeadReflogEntry {
     pub selector: String,
@@ -8,16 +10,16 @@ pub struct HeadReflogEntry {
 }
 
 pub fn get_head_reflog_entries(repo: &gix::Repository) -> Result<Vec<HeadReflogEntry>, git2::Error> {
-    let head = repo.head().map_err(|error| git2::Error::from_str(&error.to_string()))?;
+    let head = repo.head().map_err(gix_error)?;
     let mut log_iter = head.log_iter();
-    let Some(reflog) = log_iter.rev().map_err(|error| git2::Error::from_str(&error.to_string()))? else {
+    let Some(reflog) = log_iter.rev().map_err(gix_error)? else {
         return Err(git2::Error::from_str("HEAD reflog not found"));
     };
 
     let mut entries = Vec::new();
 
     for (idx, entry) in reflog.enumerate() {
-        let entry = entry.map_err(|error| git2::Error::from_str(&error.to_string()))?;
+        let entry = entry.map_err(gix_error)?;
         if entry.new_oid.is_null() || repo.find_commit(entry.new_oid).is_err() {
             continue;
         }

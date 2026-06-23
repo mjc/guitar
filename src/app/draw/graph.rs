@@ -91,16 +91,8 @@ impl App {
             && self.graph.graph_projection.key != Some(key)
         {
             let window = self.graph.graph_window.as_ref().expect("projection key requires graph window");
-            let message_lines = render_message_projection(
-                &self.theme,
-                &self.symbols,
-                &window.rows,
-                key.show_reflog_labels,
-                key.show_ref_labels,
-                key.selected,
-                &self.uncommitted,
-                key.render_uncommitted_row,
-            );
+            let message_lines =
+                render_message_projection(&self.theme, &self.symbols, &window.rows, key.show_reflog_labels, key.show_ref_labels, key.selected, &self.uncommitted, key.render_uncommitted_row);
             self.graph.graph_projection = GraphProjectionCache { key: Some(key), message_lines };
         }
 

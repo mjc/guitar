@@ -29,14 +29,7 @@ pub const GRAPH_COMMITTER_WIDTH: usize = 18;
 // precomputed by Buffer, but only for the requested visible range.
 #[allow(clippy::too_many_arguments)]
 pub fn render_graph_projection<'symbols>(
-    theme: &Theme,
-    symbols: &'symbols SymbolTheme,
-    rows: &[GraphRow],
-    history: &GraphHistory,
-    head_alias: u32,
-    start: usize,
-    end: usize,
-    render_uncommitted_row: bool,
+    theme: &Theme, symbols: &'symbols SymbolTheme, rows: &[GraphRow], history: &GraphHistory, head_alias: u32, start: usize, end: usize, render_uncommitted_row: bool,
 ) -> Vec<Line<'symbols>> {
     let graph = &symbols.graph;
     let worktree = &symbols.worktree;

@@ -1,6 +1,6 @@
 use crate::core::oids::git2_to_gix_oid;
-use git2::Oid;
 use crate::git::queries::reflogs::get_head_reflog_entries;
+use git2::Oid;
 use git2::{Repository, ResetType, Signature};
 use std::{
     fs,

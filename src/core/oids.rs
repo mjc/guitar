@@ -144,7 +144,6 @@ impl AliasIndex {
         };
         aliases
     }
-
 }
 
 #[derive(Clone)]
@@ -190,7 +189,14 @@ impl CollisionBucket {
 
 impl Default for Oids {
     fn default() -> Self {
-        Oids { zero: ObjectId::null(gix::hash::Kind::Sha1), oids: OidStore::default(), aliases: AliasIndex::default(), alias_collisions: FxHashMap::default(), sorted_aliases: vec![NONE], stashes: vec![] }
+        Oids {
+            zero: ObjectId::null(gix::hash::Kind::Sha1),
+            oids: OidStore::default(),
+            aliases: AliasIndex::default(),
+            alias_collisions: FxHashMap::default(),
+            sorted_aliases: vec![NONE],
+            stashes: vec![],
+        }
     }
 }
 

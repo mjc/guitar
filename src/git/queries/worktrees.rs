@@ -1,5 +1,6 @@
 use crate::{
     core::worktrees::{WorktreeEntry, WorktreeKind},
+    git::gix::gix_error,
     git::queries::helpers::UncommittedChanges,
 };
 use git2::{Error, Repository};
@@ -20,7 +21,7 @@ fn open_repo(repo: &Repository) -> Result<gix::Repository, Error> {
     let path = gix_path(repo);
     let options = if repo.workdir().is_some() { gix::open::Options::default() } else { gix::open::Options::default().open_path_as_is(true) };
 
-    gix::open_opts(path, options).map_err(|err| Error::from_str(&err.to_string()))
+    gix::open_opts(path, options).map_err(gix_error)
 }
 
 fn head_branch(repo: &gix::Repository) -> Option<String> {
@@ -112,7 +113,7 @@ fn list_worktrees_with_dirty_check(repo: &Repository, current_path: Option<&Path
     let current = canonical_path(&current);
 
     let current_repo = open_repo(repo)?;
-    let owner_repo = current_repo.main_repo().map_err(|err| Error::from_str(&err.to_string()))?;
+    let owner_repo = current_repo.main_repo().map_err(gix_error)?;
 
     let mut entries = Vec::new();
 
@@ -121,7 +122,7 @@ fn list_worktrees_with_dirty_check(repo: &Repository, current_path: Option<&Path
         entries.push(worktree_entry_from_repo(&owner_repo, main_name, main_path, WorktreeKind::Main, &current, dirty_check));
     }
 
-    let mut linked: Vec<WorktreeEntry> = owner_repo.worktrees().map_err(|err| Error::from_str(&err.to_string()))?.into_iter().filter_map(|proxy| linked_entry(proxy, &current, dirty_check)).collect();
+    let mut linked: Vec<WorktreeEntry> = owner_repo.worktrees().map_err(gix_error)?.into_iter().filter_map(|proxy| linked_entry(proxy, &current, dirty_check)).collect();
     linked.sort_by(|a, b| a.name.cmp(&b.name));
     entries.extend(linked);
 

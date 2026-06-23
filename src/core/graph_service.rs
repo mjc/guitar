@@ -504,10 +504,7 @@ fn commit_metadata_from_repo(repo: &gix::Repository, oid: gix::ObjectId, symbols
 }
 
 fn commit_summary_from_repo(repo: &gix::Repository, oid: gix::ObjectId, symbols: &SymbolTheme) -> String {
-    repo.find_commit(oid)
-        .ok()
-        .and_then(|commit| commit.message().ok().map(|message| String::from_utf8_lossy(message.summary().as_ref()).into_owned()))
-        .unwrap_or_else(|| no_message(symbols))
+    repo.find_commit(oid).ok().and_then(|commit| commit.message().ok().map(|message| String::from_utf8_lossy(message.summary().as_ref()).into_owned())).unwrap_or_else(|| no_message(symbols))
 }
 
 fn commit_parent_oids_from_repo(repo: &gix::Repository, oid: gix::ObjectId) -> Vec<gix::ObjectId> {
@@ -573,9 +570,7 @@ fn graph_rows(
 }
 
 fn load_commit_metadata(walk_ctx: &Walker, cache: &mut CommitMetadataCache, alias: u32, oid: gix::ObjectId, symbols: &SymbolTheme) -> CommitMetadata {
-    cache.get_or_insert_with(alias, || {
-        commit_metadata_from_repo(&walk_ctx.gix_repo, oid, symbols)
-    })
+    cache.get_or_insert_with(alias, || commit_metadata_from_repo(&walk_ctx.gix_repo, oid, symbols))
 }
 
 fn graph_row_at(walk_ctx: &Walker, worktrees: &Worktrees, commit_metadata: &mut CommitMetadataCache, hidden_branch_names: &HashSet<String>, symbols: &SymbolTheme, index: usize) -> Option<GraphRow> {
@@ -598,9 +593,8 @@ fn pane_window_rows(pane: GraphPane, walk_ctx: &Walker, start: usize, end: usize
             local.sort_by(|a, b| a.1.cmp(b.1));
             remote.sort_by(|a, b| a.1.cmp(b.1));
             let total = local.len() + remote.len();
-            let start = start.min(total);
-            let end = end.min(total);
-            let selected: Vec<_> = local.iter().chain(remote.iter()).skip(start).take(end.saturating_sub(start)).copied().collect();
+            let window = pane_window(start, end, total);
+            let selected: Vec<_> = local.iter().chain(remote.iter()).skip(window.start).take(window.len()).copied().collect();
             let index_map = alias_indices_for(walk_ctx, selected.iter().map(|(alias, _, _)| *alias));
             let rows = selected
                 .into_iter()
@@ -618,9 +612,8 @@ fn pane_window_rows(pane: GraphPane, walk_ctx: &Walker, start: usize, end: usize
             let mut rows: Vec<_> = walk_ctx.tags_local.iter().flat_map(|(&alias, tags)| tags.iter().map(move |tag| (alias, tag))).collect();
             rows.sort_by(|a, b| a.1.cmp(b.1));
             let total = rows.len();
-            let start = start.min(total);
-            let end = end.min(total);
-            let selected: Vec<_> = rows.iter().skip(start).take(end.saturating_sub(start)).copied().collect();
+            let window = pane_window(start, end, total);
+            let selected: Vec<_> = rows.iter().skip(window.start).take(window.len()).copied().collect();
             let index_map = alias_indices_for(walk_ctx, selected.iter().map(|(alias, _)| *alias));
             let rows = selected
                 .into_iter()
@@ -630,9 +623,8 @@ fn pane_window_rows(pane: GraphPane, walk_ctx: &Walker, start: usize, end: usize
         },
         GraphPane::Stashes => {
             let total = walk_ctx.oids.stashes.len();
-            let start = start.min(total);
-            let end = end.min(total);
-            let selected: Vec<_> = walk_ctx.oids.stashes.iter().skip(start).take(end.saturating_sub(start)).copied().collect();
+            let window = pane_window(start, end, total);
+            let selected: Vec<_> = walk_ctx.oids.stashes.iter().skip(window.start).take(window.len()).copied().collect();
             let index_map = alias_indices_for(walk_ctx, selected.iter().copied());
             let rows = selected
                 .into_iter()
@@ -659,9 +651,8 @@ fn pane_window_rows(pane: GraphPane, walk_ctx: &Walker, start: usize, end: usize
                 })
                 .collect();
             let total = rows.len();
-            let start = start.min(total);
-            let end = end.min(total);
-            let selected: Vec<_> = rows.iter().skip(start).take(end.saturating_sub(start)).copied().collect();
+            let window = pane_window(start, end, total);
+            let selected: Vec<_> = rows.iter().skip(window.start).take(window.len()).copied().collect();
             let index_map = alias_indices_for(walk_ctx, selected.iter().map(|(alias, _)| *alias));
             let rows = selected
                 .into_iter()
@@ -676,6 +667,11 @@ fn pane_window_rows(pane: GraphPane, walk_ctx: &Walker, start: usize, end: usize
             (total, rows)
         },
     }
+}
+
+fn pane_window(start: usize, end: usize, total: usize) -> std::ops::Range<usize> {
+    let start = start.min(total);
+    start..end.min(total).max(start)
 }
 
 fn lookup(
@@ -780,7 +776,14 @@ fn latest_reflogs_by_alias(walk_ctx: &Walker) -> HashMap<u32, HeadReflogAliasEnt
 }
 
 fn alias_reflog_entry(entry: &HeadReflogEntry, new_alias: u32) -> HeadReflogAliasEntry {
-    HeadReflogAliasEntry { selector: entry.selector.clone(), old_oid: gix_to_git2_oid(entry.old_oid), new_oid: gix_to_git2_oid(entry.new_oid), new_alias, message: entry.message.clone(), time: entry.time }
+    HeadReflogAliasEntry {
+        selector: entry.selector.clone(),
+        old_oid: gix_to_git2_oid(entry.old_oid),
+        new_oid: gix_to_git2_oid(entry.new_oid),
+        new_alias,
+        message: entry.message.clone(),
+        time: entry.time,
+    }
 }
 
 fn worktrees_for_alias(worktrees: &Worktrees, walk_ctx: &Walker, alias: u32) -> Vec<WorktreeEntry> {

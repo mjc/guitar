@@ -2,7 +2,7 @@ use crate::core::{
     batcher::{Batcher, WalkCommit},
     oids::Oids,
 };
-use crate::helpers::branch_visibility::branch_name_from_ref;
+use crate::git::gix::for_each_branch_tip;
 use git2::Repository;
 use gix::prelude::HeaderExt;
 use std::collections::HashMap;
@@ -12,22 +12,10 @@ pub fn get_tip_oids(repo: &gix::Repository, oids: &mut Oids) -> (HashMap<u32, Ve
     let mut local: HashMap<u32, Vec<String>> = HashMap::new();
     let mut remote: HashMap<u32, Vec<String>> = HashMap::new();
 
-    let Ok(references) = repo.references() else {
-        return (local, remote);
-    };
-    for (references, bucket) in [(references.local_branches(), &mut local), (references.remote_branches(), &mut remote)] {
-        let Ok(references) = references else { continue };
-
-        for reference in references {
-            let Ok(reference) = reference else { continue };
-            let Some(oid) = reference.try_id().map(|id| id.detach()) else { continue };
-            let alias = oids.get_alias_by_oid(oid);
-
-            if let Some(name) = branch_name_from_ref(reference.name().as_bstr()) {
-                bucket.entry(alias).or_default().push(name.to_string());
-            }
-        }
-    }
+    let _ = for_each_branch_tip(repo, |is_local, name, oid| {
+        let bucket = if is_local { &mut local } else { &mut remote };
+        bucket.entry(oids.get_alias_by_oid(oid)).or_default().push(name.to_string());
+    });
 
     (local, remote)
 }
