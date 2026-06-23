@@ -47,7 +47,8 @@ fn bench_render(bencher: Bencher, case: GraphRenderCase<'_>) {
 }
 
 fn message_case(theme: &Theme, symbols: &SymbolTheme, rows: &[GraphRow], selected: usize, show_refs: bool) -> (usize, usize) {
-    let lines = black_box(render_message_projection(theme, symbols, rows, true, show_refs, selected, &UncommittedChanges::default(), true));
+    let uncommitted = UncommittedChanges::default();
+    let lines = black_box(render_message_projection(theme, symbols, rows, true, show_refs, selected, &uncommitted, true));
     let bytes = lines.iter().map(|line| line.width()).sum();
     (lines.len(), bytes)
 }
@@ -142,6 +143,7 @@ fn render_graph_projection_uncommitted_row(bencher: Bencher) {
         summary: "uncommitted".to_string(),
         committer_date: String::new(),
         committer_name: String::new(),
+        is_merge: false,
         has_any_branch: false,
         branches: Vec::new(),
         tags: Vec::new(),

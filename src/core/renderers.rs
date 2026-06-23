@@ -27,13 +27,21 @@ pub const GRAPH_COMMITTER_WIDTH: usize = 18;
 
 // Render graph symbols from worker-projected rows. The lane history is still
 // precomputed by Buffer, but only for the requested visible range.
-pub fn render_graph_projection<'a>(
-    theme: &Theme, symbols: &'a SymbolTheme, rows: &[GraphRow], history: &GraphHistory, head_alias: u32, start: usize, end: usize, render_uncommitted_row: bool,
-) -> Vec<Line<'a>> {
+#[allow(clippy::too_many_arguments)]
+pub fn render_graph_projection<'symbols>(
+    theme: &Theme,
+    symbols: &'symbols SymbolTheme,
+    rows: &[GraphRow],
+    history: &GraphHistory,
+    head_alias: u32,
+    start: usize,
+    end: usize,
+    render_uncommitted_row: bool,
+) -> Vec<Line<'symbols>> {
     let graph = &symbols.graph;
     let worktree = &symbols.worktree;
     let mut layers = LayersContext::new(ColorPicker::from_theme(theme));
-    let mut lines: Vec<Line<'a>> = Vec::with_capacity(rows.len());
+    let mut lines: Vec<Line<'symbols>> = Vec::with_capacity(rows.len());
     let mut flattened_lanes = Vec::with_capacity(history.last().map_or(0, |snapshot| snapshot.len()));
     let mut closeout_flattened_lanes = Vec::with_capacity(history.last().map_or(0, |snapshot| snapshot.len()));
 
@@ -553,8 +561,16 @@ pub fn render_committer_projection(theme: &Theme, rows: &[GraphRow], selected: u
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_message_projection(
-    theme: &Theme, symbols: &SymbolTheme, rows: &[GraphRow], show_reflog_labels: bool, show_ref_labels: bool, selected: usize, uncommitted: &UncommittedChanges, render_uncommitted_row: bool,
+    theme: &Theme,
+    symbols: &SymbolTheme,
+    rows: &[GraphRow],
+    show_reflog_labels: bool,
+    show_ref_labels: bool,
+    selected: usize,
+    uncommitted: &UncommittedChanges,
+    render_uncommitted_row: bool,
 ) -> Vec<Line<'static>> {
     let color_picker = ColorPicker::from_theme(theme);
     let branch_symbols = &symbols.branch;

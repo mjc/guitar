@@ -140,6 +140,7 @@ pub struct GraphRow {
     pub summary: String,
     pub committer_date: String,
     pub committer_name: String,
+    pub is_merge: bool,
     pub has_any_branch: bool,
     pub branches: Vec<GraphBranchLabel>,
     pub tags: Vec<GraphTagLabel>,
@@ -155,6 +156,7 @@ struct CommitMetadata {
     summary: String,
     committer_date: String,
     committer_name: String,
+    is_merge_commit: bool,
 }
 
 #[derive(Debug, Default)]
@@ -486,7 +488,7 @@ fn no_message(symbols: &SymbolTheme) -> String {
     format!("{} {}", symbols.empty_state.mark, empty::NO_MESSAGE())
 }
 
-fn commit_metadata_from_repo(repo: &gix::Repository, oid: Oid, symbols: &SymbolTheme) -> (String, String, String) {
+fn commit_metadata_from_repo(repo: &gix::Repository, oid: Oid, symbols: &SymbolTheme) -> CommitMetadata {
     repo.find_commit(git2_to_gix_oid(oid))
         .ok()
         .and_then(|commit| {
@@ -495,9 +497,10 @@ fn commit_metadata_from_repo(repo: &gix::Repository, oid: Oid, symbols: &SymbolT
             let time = gix_time_to_git2_time(committer.time().ok()?);
             let committer_date = timestamp_to_utc_date_time(time);
             let committer_name = String::from_utf8_lossy(committer.name.as_ref()).into_owned();
-            Some((summary, committer_date, committer_name))
+            let is_merge_commit = commit.parent_ids().take(2).count() > 1;
+            Some(CommitMetadata { summary, committer_date, committer_name, is_merge_commit })
         })
-        .unwrap_or_else(|| (no_message(symbols), String::new(), String::new()))
+        .unwrap_or_else(|| CommitMetadata { summary: no_message(symbols), ..CommitMetadata::default() })
 }
 
 fn commit_summary_from_repo(repo: &gix::Repository, oid: Oid, symbols: &SymbolTheme) -> String {
@@ -539,6 +542,7 @@ fn graph_rows(
         let tags = walk_ctx.tags_local.get(&alias).cloned().unwrap_or_default().into_iter().map(|name| GraphTagLabel { name, lane: tag_lane }).collect();
 
         let is_stash = walk_ctx.oids.stashes.contains(&alias);
+        let is_merge = metadata.is_merge_commit && !is_stash;
         let stash_lane = walk_ctx.stashes_lanes.get(&alias).copied();
         let worktrees = worktrees_for_alias(worktrees, walk_ctx, alias);
         let has_current_worktree = !worktrees.is_empty() && (!has_any_branch || worktrees.iter().any(|entry| entry.branch.is_none()));
@@ -552,6 +556,7 @@ fn graph_rows(
             summary: metadata.summary,
             committer_date: metadata.committer_date,
             committer_name: metadata.committer_name,
+            is_merge,
             has_any_branch,
             branches,
             tags,
@@ -568,8 +573,7 @@ fn graph_rows(
 
 fn load_commit_metadata(walk_ctx: &Walker, cache: &mut CommitMetadataCache, alias: u32, oid: Oid, symbols: &SymbolTheme) -> CommitMetadata {
     cache.get_or_insert_with(alias, || {
-        let (summary, committer_date, committer_name) = commit_metadata_from_repo(&walk_ctx.gix_repo, oid, symbols);
-        CommitMetadata { summary, committer_date, committer_name }
+        commit_metadata_from_repo(&walk_ctx.gix_repo, oid, symbols)
     })
 }
 

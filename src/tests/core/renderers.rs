@@ -10,6 +10,18 @@ use git2::Oid;
 use ratatui::style::Color;
 use std::path::PathBuf;
 
+fn render_graph_projection<'a>(
+    theme: &Theme, symbols: &'a SymbolTheme, rows: &[GraphRow], history: &GraphHistory, head_alias: u32, start: usize, end: usize, render_uncommitted_row: bool,
+) -> Vec<Line<'a>> {
+    super::render_graph_projection(theme, symbols, rows, history, head_alias, start, end, render_uncommitted_row)
+}
+
+fn render_message_projection(
+    theme: &Theme, symbols: &SymbolTheme, rows: &[GraphRow], show_reflog_labels: bool, show_ref_labels: bool, selected: usize, uncommitted: &UncommittedChanges, render_uncommitted_row: bool,
+) -> Vec<Line<'static>> {
+    super::render_message_projection(theme, symbols, rows, show_reflog_labels, show_ref_labels, selected, uncommitted, render_uncommitted_row)
+}
+
 fn graph_row(index: usize, oid: Oid, summary: &str) -> GraphRow {
     GraphRow {
         index,
@@ -19,6 +31,7 @@ fn graph_row(index: usize, oid: Oid, summary: &str) -> GraphRow {
         summary: summary.to_string(),
         committer_date: String::new(),
         committer_name: String::new(),
+        is_merge: false,
         has_any_branch: false,
         branches: Vec::new(),
         tags: Vec::new(),

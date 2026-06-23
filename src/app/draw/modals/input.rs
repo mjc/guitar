@@ -1,7 +1,7 @@
 use crate::{
     app::{
         app::App,
-        draw::modals::shared::{ModalTextInput, action_row, modal_block, render_modal_text_input},
+        draw::modals::shared::{action_row, modal_block, render_modal_text_input},
     },
     helpers::localisation::modal,
 };
@@ -52,16 +52,14 @@ impl App {
 
         render_modal_text_input(
             frame,
-            ModalTextInput {
-                area: input_area,
-                input: &mut self.modal_input,
-                masked: false,
-                text_style: Style::default().fg(self.theme.COLOR_TEXT),
-                border_style: Style::default().fg(self.theme.COLOR_GREY_800),
-                title: None,
-                show_cursor: true,
-                symbols: &self.symbols,
-            },
+            input_area,
+            &mut self.modal_input,
+            false,
+            Style::default().fg(self.theme.COLOR_TEXT),
+            Style::default().fg(self.theme.COLOR_GREY_800),
+            None,
+            true,
+            &self.symbols,
         );
     }
 }

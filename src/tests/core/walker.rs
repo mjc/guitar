@@ -317,7 +317,8 @@ fn walker_expires_new_right_merge_lane_before_next_rendered_row() {
         })
         .collect();
     let symbols = SymbolTheme::main();
-    let lines = render_graph_projection(&Theme::classic(), &symbols, &rows, &history, head_alias, 0, aliases.len(), true);
+    let theme = Theme::classic();
+    let lines = render_graph_projection(&theme, &symbols, &rows, &history, head_alias, 0, aliases.len(), true);
     let merge_text = line_text(&lines[merge_idx]);
     let next_text = line_text(&lines[merge_idx + 1]);
     let merge_col = merge_text.chars().position(|ch| ch == graph::MERGE.chars().next().unwrap()).unwrap();
