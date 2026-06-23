@@ -798,10 +798,11 @@ impl App {
         self.repo.as_ref()?;
 
         let repo_path = self.path.as_deref().unwrap_or(".");
-        effective_default_remote_from_remotes(repo_path, &self.remotes).or_else(|| effective_default_remote(repo_path)).or_else(|| {
+        let remote_name = effective_default_remote_from_remotes(repo_path, &self.remotes).or_else(|| effective_default_remote(repo_path));
+        if remote_name.is_none() {
             self.show_error(errors::no_remotes_configured(operation));
-            None
-        })
+        }
+        remote_name
     }
 
     pub fn on_create_branch(&mut self) {

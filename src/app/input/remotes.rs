@@ -259,14 +259,10 @@ impl App {
 
     fn rewrite_hidden_remote_prefix(&mut self, old_remote: &str, new_remote: Option<&str>) {
         let prefix = format!("{old_remote}/");
-        let updated = self
-            .branches
-            .hidden_branch_names
-            .iter()
-            .filter_map(|name| name.strip_prefix(&prefix).map_or_else(|| Some(name.clone()), |suffix| new_remote.map(|remote| format!("{remote}/{suffix}"))))
+        self.branches.hidden_branch_names = std::mem::take(&mut self.branches.hidden_branch_names)
+            .into_iter()
+            .filter_map(|name| if name.starts_with(&prefix) { new_remote.map(|remote| format!("{remote}/{}", &name[prefix.len()..])) } else { Some(name) })
             .collect();
-
-        self.branches.hidden_branch_names = updated;
         if let Some(path) = &self.path {
             save_branch_visibility(path, &self.branches.hidden_branch_names);
         }

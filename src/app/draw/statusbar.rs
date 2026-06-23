@@ -19,18 +19,20 @@ impl App {
     }
 
     fn head_status_label(&self) -> Span<'static> {
-        let current = self.worktrees.entries.iter().find(|entry| entry.is_current);
-        if let Some(branch) = current.and_then(|entry| entry.branch.as_deref()) {
+        let Some(current) = self.worktrees.entries.iter().find(|entry| entry.is_current) else {
+            return Span::styled(status_text::NO_HEAD_NO_COMMITS(), Style::default().fg(self.theme.COLOR_TEXT));
+        };
+        if let Some(branch) = current.branch.as_deref() {
             return Span::styled(format!("{} {}", self.symbols.branch.local_visible, branch), Style::default().fg(self.theme.COLOR_GRASS));
         }
-        if let Some(oid) = current.and_then(|entry| entry.head) {
+        if let Some(oid) = current.head {
             return Span::styled(format!("{} #{:.6}", status_text::DETACHED_HEAD(), oid), Style::default().fg(self.theme.COLOR_TEXT));
         }
         Span::styled(status_text::NO_HEAD_NO_COMMITS(), Style::default().fg(self.theme.COLOR_TEXT))
     }
 
     fn statusbar_branch_total(&self) -> usize {
-        self.graph.branches_window.as_ref().map(|window| window.total).unwrap_or_else(|| self.branches.sorted.iter().filter(|(_, branch)| !self.branches.hidden_branch_names.contains(branch)).count())
+        self.graph.branches_window.as_ref().map_or_else(|| self.branches.sorted.iter().filter(|(_, branch)| !self.branches.hidden_branch_names.contains(branch)).count(), |window| window.total)
     }
 
     pub fn draw_statusbar(&mut self, frame: &mut Frame, _repo: &git2::Repository) {
@@ -96,18 +98,15 @@ impl App {
 
         let icon_spinner = if self.spinner.is_running() { format!("{} ", self.spinner.get_char()) } else { "".to_string() };
 
-        // Action mode indicator (moved here)
-        let mut action_hint =
-            if self.mode == InputMode::Action { vec![Span::styled(format!("{} ", self.symbols.graph.commit_branch), Style::default().fg(self.theme.COLOR_GRAPEFRUIT))] } else { Vec::new() };
-
-        // Zen mode indicator
-        if self.layout_config.is_zen {
-            action_hint.push(Span::styled(format!("{} ", self.symbols.graph.commit_branch), Style::default().fg(self.theme.COLOR_GRASS)));
-        }
-
         let mut right_spans = vec![Span::styled(if total == 0 { "".to_string() } else { format!("{}/{}{} ", cursor, total, icon_spinner) }, Style::default().fg(self.theme.COLOR_TEXT))];
 
-        right_spans.extend(action_hint);
+        // Action and zen mode indicators.
+        if self.mode == InputMode::Action {
+            right_spans.push(Span::styled(format!("{} ", self.symbols.graph.commit_branch), Style::default().fg(self.theme.COLOR_GRAPEFRUIT)));
+        }
+        if self.layout_config.is_zen {
+            right_spans.push(Span::styled(format!("{} ", self.symbols.graph.commit_branch), Style::default().fg(self.theme.COLOR_GRASS)));
+        }
 
         let title_paragraph = ratatui::widgets::Paragraph::new(Text::from(Line::from(right_spans))).right_aligned().block(Block::default());
 
