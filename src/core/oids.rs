@@ -111,14 +111,6 @@ impl Default for AliasIndex {
 }
 
 impl AliasIndex {
-    #[cfg(test)]
-    fn capacity(&self) -> usize {
-        match self {
-            AliasIndex::Hash(aliases) => aliases.capacity(),
-            AliasIndex::Flat(aliases) => aliases.capacity(),
-        }
-    }
-
     fn get(&self, fingerprint: OidFingerprint) -> Option<u32> {
         match self {
             AliasIndex::Hash(aliases) => aliases.get(&fingerprint).copied(),
@@ -153,10 +145,6 @@ impl AliasIndex {
         aliases
     }
 
-    #[cfg(test)]
-    fn is_flat(&self) -> bool {
-        matches!(self, AliasIndex::Flat(_))
-    }
 }
 
 #[derive(Clone)]

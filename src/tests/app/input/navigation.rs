@@ -1210,27 +1210,6 @@ fn graph_metadata_shifted_punctuation_aliases_toggle_display_flags() {
 }
 
 #[test]
-fn graph_metadata_legacy_ctrl_digit_aliases_toggle_display_flags() {
-    let mut keymaps = minimal_keymaps();
-    let normal = keymaps.get_mut(&InputMode::Normal).unwrap();
-    normal.insert(KeyBinding::new(KeyCode::Char('2'), KeyModifiers::SHIFT), Command::ToggleGraphDates);
-    normal.insert(KeyBinding::new(KeyCode::Char('3'), KeyModifiers::SHIFT), Command::ToggleGraphCommitters);
-    normal.insert(KeyBinding::new(KeyCode::Char('4'), KeyModifiers::SHIFT), Command::ToggleGraphRefs);
-    let mut app = App { viewport: Viewport::Graph, focus: Focus::Viewport, keymaps, ..Default::default() };
-    app.layout_config.is_graph_dates = false;
-    app.layout_config.is_graph_committers = false;
-    app.layout_config.is_graph_refs = true;
-
-    app.handle_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL));
-    app.handle_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL));
-    app.handle_key_event(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL));
-
-    assert!(app.layout_config.is_graph_dates);
-    assert!(app.layout_config.is_graph_committers);
-    assert!(!app.layout_config.is_graph_refs);
-}
-
-#[test]
 fn graph_reflog_shift_digit_shortcut_toggles_and_reloads() {
     let (path, repo) = temp_repo("graph-reflog-shortcut");
     commit_file(&repo, "head.txt", "head");

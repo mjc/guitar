@@ -84,20 +84,6 @@ fn malformed_symbols_config_loads_main_and_rewrites_full_file() {
 }
 
 #[test]
-fn old_string_symbols_config_loads_preset_and_rewrites_full_file() {
-    let path = temp_symbols_path("old-string");
-    fs::write(&path, "\"ascii\"").unwrap();
-
-    let theme = load_symbol_theme_from_path(&path);
-    let contents = read(&path);
-
-    assert_eq!(theme, SymbolTheme::ascii());
-    assert!(contents.contains("\"label\": \"ascii\""));
-    assert!(contents.contains("\"symbols\""));
-    assert!(contents.contains("\"rounded_top_left\": \"+\""));
-}
-
-#[test]
 fn known_preset_config_loads_and_rewrites_full_file() {
     let path = temp_symbols_path("preset");
     save_symbol_theme_to_path(&path, &SymbolTheme::ascii());

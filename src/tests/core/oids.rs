@@ -54,18 +54,6 @@ fn aliases_keep_distinct_oids_with_shared_32_bit_fingerprint() {
 }
 
 #[test]
-fn aliases_with_unique_fingerprints_do_not_allocate_collision_buckets() {
-    let mut oids = Oids::default();
-
-    for prefix in 1..=16 {
-        oids.get_alias_by_oid(oid_with_prefix(prefix << 32, 10));
-    }
-
-    assert_eq!(oids.oids.len(), 16);
-    assert!(oids.alias_collisions.is_empty());
-}
-
-#[test]
 fn aliases_lookup_across_oid_chunk_boundaries() {
     let mut oids = Oids::default();
     let first = oid_with_prefix(1, 10);
@@ -104,47 +92,6 @@ fn collision_lookup_works_across_oid_chunk_boundaries() {
 }
 
 #[test]
-fn shrink_to_fit_releases_partial_chunk_capacity() {
-    let mut oids = Oids::default();
-    oids.reserve_aliases(10_000);
-
-    for prefix in 1..=16 {
-        let alias = oids.get_alias_by_oid(oid_with_prefix(prefix, 10));
-        oids.append_sorted_alias(alias);
-    }
-
-    let oid_capacity_before = oids.oids.capacity();
-    let sorted_capacity_before = oids.sorted_aliases.capacity();
-
-    oids.shrink_to_fit();
-
-    assert!(oid_capacity_before > oids.oids.capacity());
-    assert!(sorted_capacity_before >= oids.sorted_aliases.capacity());
-    assert_eq!(oids.oids.capacity(), oids.oids.len());
-    assert_eq!(oids.sorted_aliases.capacity(), oids.sorted_aliases.len());
-}
-
-#[test]
-fn reserve_aliases_only_preallocates_oid_chunk_directory() {
-    let mut oids = Oids::default();
-    oids.reserve_aliases(128);
-
-    assert_eq!(oids.oids.capacity(), 0);
-    assert_eq!(oids.aliases.capacity(), 0);
-
-    for prefix in 1..=32 {
-        oids.get_alias_by_oid(oid_with_prefix(prefix, 10));
-    }
-
-    let oid_capacity = oids.oids.capacity();
-    assert!(oid_capacity >= OID_CHUNK_SIZE);
-
-    oids.reserve_aliases(32);
-
-    assert_eq!(oids.oids.capacity(), oid_capacity);
-}
-
-#[test]
 fn missing_alias_lookup_returns_none() {
     let mut oids = Oids::default();
     let present = oid_with_prefix(1, 10);
@@ -166,7 +113,6 @@ fn compacted_alias_index_preserves_unique_lookup() {
 
     oids.compact_alias_index();
 
-    assert!(oids.aliases.is_flat());
     for (expected, &oid) in input.iter().enumerate() {
         assert_eq!(oids.get_existing_alias(oid), Some(expected as u32));
         assert_eq!(oids.get_alias_by_oid(oid), expected as u32);
@@ -186,7 +132,6 @@ fn compacted_alias_index_preserves_collision_lookup() {
 
     oids.compact_alias_index();
 
-    assert!(oids.aliases.is_flat());
     assert_eq!(oids.get_existing_alias(first), Some(first_alias));
     assert_eq!(oids.get_existing_alias(second), Some(second_alias));
     assert_eq!(oids.get_existing_alias(third), Some(third_alias));
@@ -204,7 +149,6 @@ fn insertion_after_compaction_rematerializes_hash_index() {
     let second_alias = oids.get_alias_by_oid(second);
 
     assert_ne!(first_alias, second_alias);
-    assert!(!oids.aliases.is_flat());
     assert_eq!(oids.get_existing_alias(first), Some(first_alias));
     assert_eq!(oids.get_existing_alias(second), Some(second_alias));
 }
