@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    core::{graph_service::GraphRow, oids::Oids, renderers::render_graph_projection},
+    core::{graph_service::GraphRow, oids::{Oids, gix_to_git2_oid}, renderers::render_graph_projection},
     git::actions::worktrees::create_worktree,
     git::queries::{
         commits::{get_stashed_commits, get_tag_oids, get_tip_oids},
@@ -129,7 +129,7 @@ fn collect_root_oids(repo: &mut Repository, include_head_reflog_roots: bool) -> 
         }
     }
 
-    let mut roots: Vec<_> = aliases.into_iter().map(|alias| *oids.get_oid_by_alias(alias)).collect();
+    let mut roots: Vec<_> = aliases.into_iter().map(|alias| oids.get_git2_oid_by_alias(alias)).collect();
     roots.sort_unstable_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
     roots
 }
@@ -152,12 +152,12 @@ fn tag_oids_via_libgit2(repo: &Repository, oids: &mut Oids) -> HashMap<u32, Vec<
 fn git2_stash_root_oids(repo: &mut Repository) -> StdHashSet<Oid> {
     let mut oids = Oids::default();
     let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
-    get_stashed_commits(&gix_repo, &mut oids).into_iter().map(|alias| *oids.get_oid_by_alias(alias)).collect()
+    get_stashed_commits(&gix_repo, &mut oids).into_iter().map(|alias| oids.get_git2_oid_by_alias(alias)).collect()
 }
 
 fn git2_head_reflog_root_oids(repo: &Repository) -> StdHashSet<Oid> {
     let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
-    get_head_reflog_entries(&gix_repo).unwrap_or_default().into_iter().map(|entry| entry.new_oid).collect()
+    get_head_reflog_entries(&gix_repo).unwrap_or_default().into_iter().map(|entry| gix_to_git2_oid(entry.new_oid)).collect()
 }
 
 fn gitoxide_stash_root_oids(repo: &gix::Repository) -> StdHashSet<Oid> {
@@ -189,7 +189,6 @@ fn graph_metadata_from_walker(walker: &Walker) -> HashMap<Oid, CommitMetadata> {
         .filter_map(|&alias| {
             let oid = *walker.oids.get_oid_by_alias(alias);
             (!walker.oids.is_zero(&oid)).then(|| {
-                let oid = gix::ObjectId::from_bytes_or_panic(oid.as_bytes());
                 (gix_to_git2_oid(oid), commit_metadata_from_repo(&walker.gix_repo, oid))
             })
         })
@@ -273,7 +272,7 @@ fn walker_can_hide_commit_reachable_only_from_head_reflog() {
     let lost_alias = walker.oids.get_existing_alias(lost).unwrap();
 
     assert!(!walker.oids.get_sorted_aliases().contains(&lost_alias));
-    assert!(walker.head_reflog_entries.iter().any(|entry| entry.new_oid == lost));
+    assert!(walker.head_reflog_entries.iter().any(|entry| gix_to_git2_oid(entry.new_oid) == lost));
 }
 
 #[test]
@@ -311,7 +310,7 @@ fn walker_expires_new_right_merge_lane_before_next_rendered_row() {
         .iter()
         .enumerate()
         .map(|(index, &alias)| {
-            let mut row = graph_row(index, alias, *walker.oids.get_oid_by_alias(alias));
+            let mut row = graph_row(index, alias, walker.oids.get_git2_oid_by_alias(alias));
             row.is_merge = alias == merge_alias;
             row
         })
@@ -377,7 +376,12 @@ fn walker_matches_rev_list_all_by_walking_tag_only_commits() {
     let mut walker = Walker::new(path.display().to_string(), 1, HashSet::new(), false, 20).unwrap();
     while walker.walk() {}
 
-    let sorted_oids: StdHashSet<Oid> = walker.oids.get_sorted_aliases().iter().map(|alias| *walker.oids.get_oid_by_alias(*alias)).filter(|oid| !walker.oids.is_zero(oid)).collect();
+    let sorted_oids: StdHashSet<Oid> = walker
+        .oids
+        .get_sorted_aliases()
+        .iter()
+        .filter_map(|alias| (!walker.oids.is_zero(walker.oids.get_oid_by_alias(*alias))).then(|| walker.oids.get_git2_oid_by_alias(*alias)))
+        .collect();
 
     assert_eq!(sorted_oids, StdHashSet::from([root, branch_tip, tag_only]));
 }
@@ -397,7 +401,12 @@ fn walker_matches_rev_list_all_for_annotated_tags() {
     let mut walker = Walker::new(path.display().to_string(), 1, HashSet::new(), false, 20).unwrap();
     while walker.walk() {}
 
-    let sorted_oids: StdHashSet<Oid> = walker.oids.get_sorted_aliases().iter().map(|alias| *walker.oids.get_oid_by_alias(*alias)).filter(|oid| !walker.oids.is_zero(oid)).collect();
+    let sorted_oids: StdHashSet<Oid> = walker
+        .oids
+        .get_sorted_aliases()
+        .iter()
+        .filter_map(|alias| (!walker.oids.is_zero(walker.oids.get_oid_by_alias(*alias))).then(|| walker.oids.get_git2_oid_by_alias(*alias)))
+        .collect();
 
     assert_eq!(sorted_oids, StdHashSet::from([root, branch_tip, tagged]));
 }

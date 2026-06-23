@@ -1,5 +1,4 @@
-use crate::{git::gix::commit_graph_if_available, helpers::branch_visibility::branch_name_from_ref};
-use git2::Oid;
+use crate::{core::oids::IntoGixOid, git::gix::commit_graph_if_available, helpers::branch_visibility::branch_name_from_ref};
 use gix::traverse::commit::ParentIds;
 use im::HashSet;
 use std::collections::HashSet as StdHashSet;
@@ -8,7 +7,7 @@ type CommitWalk = gix::traverse::commit::Simple<gix::OdbHandle, fn(&gix::oid) ->
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalkCommit {
-    pub oid: Oid,
+    pub oid: gix::ObjectId,
     pub parent_ids: ParentIds,
     pub commit_time: Option<i64>,
 }
@@ -20,13 +19,13 @@ pub struct Batcher {
 
 impl Batcher {
     // Build the initial commit cursor from all visible local and remote branch tips.
-    pub fn new(repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: &[Oid]) -> Result<Self, git2::Error> {
+    pub fn new<I: IntoIterator<Item = O>, O: IntoGixOid>(repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: I) -> Result<Self, git2::Error> {
         let walk = Self::build(repo, hidden_branch_names, extra_roots)?;
         Ok(Self { walk: Some(walk) })
     }
 
     // Recreate the cursor after branch filters, fetches, or repository state changes.
-    pub fn reset(&mut self, repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: &[Oid]) -> Result<(), git2::Error> {
+    pub fn reset<I: IntoIterator<Item = O>, O: IntoGixOid>(&mut self, repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: I) -> Result<(), git2::Error> {
         self.walk = Some(Self::build(repo, hidden_branch_names, extra_roots)?);
         Ok(())
     }
@@ -52,16 +51,12 @@ impl Batcher {
             };
 
             let Ok(info) = result else { continue };
-            out.push(WalkCommit { oid: Oid::from_bytes(info.id.as_slice()).unwrap(), parent_ids: info.parent_ids, commit_time: info.commit_time });
+            out.push(WalkCommit { oid: info.id, parent_ids: info.parent_ids, commit_time: info.commit_time });
         }
         out.len() - before
     }
 
-    pub fn remaining(&self) -> usize {
-        0
-    }
-
-    fn build(repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: &[Oid]) -> Result<CommitWalk, git2::Error> {
+    fn build<I: IntoIterator<Item = O>, O: IntoGixOid>(repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: I) -> Result<CommitWalk, git2::Error> {
         let mut pushed: StdHashSet<gix::ObjectId> = StdHashSet::new();
         let mut tips: Vec<gix::ObjectId> = Vec::new();
 
@@ -81,8 +76,7 @@ impl Batcher {
             }
         }
 
-        for oid in extra_roots {
-            let oid = gix::ObjectId::from_bytes_or_panic(oid.as_bytes());
+        for oid in extra_roots.into_iter().map(IntoGixOid::into_gix_oid) {
             if pushed.insert(oid) {
                 tips.push(oid);
             }
@@ -100,7 +94,8 @@ impl Batcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use git2::{BranchType, Commit, Repository, Signature};
+    use crate::core::oids::git2_to_gix_oid;
+    use git2::{BranchType, Commit, Oid, Repository, Signature};
     use std::{
         collections::HashSet as StdHashSet,
         fs,
@@ -148,15 +143,19 @@ mod tests {
         repo.head().unwrap().name().unwrap().to_string()
     }
 
+    fn gix_oids(oids: impl IntoIterator<Item = Oid>) -> Vec<gix::ObjectId> {
+        oids.into_iter().map(git2_to_gix_oid).collect()
+    }
+
     #[test]
     fn next_into_appends_pages_without_replacing_existing_output() {
         let (path, repo) = temp_repo("next-into");
         let first = commit(&repo, "first.txt", "first");
         let second = commit(&repo, "second.txt", "second");
         let third = commit(&repo, "third.txt", "third");
-        let sentinel = WalkCommit { oid: Oid::zero(), parent_ids: ParentIds::new(), commit_time: None };
+        let sentinel = WalkCommit { oid: git2_to_gix_oid(Oid::zero()), parent_ids: ParentIds::new(), commit_time: None };
         let gix_repo = gix::open(&path).unwrap();
-        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), &[third]).unwrap();
+        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), [third]).unwrap();
         let mut out = vec![sentinel.clone()];
 
         assert_eq!(batcher.next_into(2, &mut out), 2);
@@ -164,7 +163,7 @@ mod tests {
         assert_eq!(batcher.next_into(2, &mut out), 0);
 
         let oids = out.iter().map(|commit| commit.oid).collect::<Vec<_>>();
-        assert_eq!(oids, vec![sentinel.oid, third, second, first]);
+        assert_eq!(oids, gix_oids([Oid::zero(), third, second, first]));
         assert_eq!(out[1].parent_ids.iter().map(|id| Oid::from_bytes(id.as_slice()).unwrap()).collect::<Vec<_>>(), vec![second]);
         assert_eq!(out[2].parent_ids.iter().map(|id| Oid::from_bytes(id.as_slice()).unwrap()).collect::<Vec<_>>(), vec![first]);
         assert!(out[3].parent_ids.is_empty());
@@ -177,9 +176,9 @@ mod tests {
         let second = commit(&repo, "second.txt", "second");
         repo.branch("duplicate", &repo.find_commit(second).unwrap(), false).unwrap();
         let gix_repo = gix::open(&path).unwrap();
-        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), &[second]).unwrap();
+        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), [second]).unwrap();
 
-        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), vec![second, first]);
+        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), gix_oids([second, first]));
     }
 
     #[test]
@@ -197,10 +196,10 @@ mod tests {
         let mut hidden_names = HashSet::new();
         hidden_names.insert("hidden".to_string());
         let gix_repo = gix::open(&path).unwrap();
-        let mut batcher = Batcher::new(&gix_repo, &hidden_names, &[]).unwrap();
+        let mut batcher = Batcher::new(&gix_repo, &hidden_names, std::iter::empty::<gix::ObjectId>()).unwrap();
 
         assert_eq!(branch_tip(&repo, "hidden"), hidden);
-        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), vec![main]);
+        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), gix_oids([main]));
     }
 
     #[test]
@@ -218,13 +217,13 @@ mod tests {
         repo.reference("refs/remotes/origin/side", side, true, "test").unwrap();
 
         let gix_repo = gix::open(&path).unwrap();
-        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), &[]).unwrap();
-        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<StdHashSet<_>>(), StdHashSet::from([side, base]));
+        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), std::iter::empty::<gix::ObjectId>()).unwrap();
+        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<StdHashSet<_>>(), StdHashSet::from([git2_to_gix_oid(side), git2_to_gix_oid(base)]));
 
         let mut hidden_names = HashSet::new();
         hidden_names.insert("origin/side".to_string());
-        let mut batcher = Batcher::new(&gix_repo, &hidden_names, &[]).unwrap();
-        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), vec![base]);
+        let mut batcher = Batcher::new(&gix_repo, &hidden_names, std::iter::empty::<gix::ObjectId>()).unwrap();
+        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), gix_oids([base]));
     }
 
     #[test]
@@ -245,10 +244,10 @@ mod tests {
             commit_with_parents(&repo, "merge.txt", "merge", &[&main_commit, &side_commit])
         };
         let gix_repo = gix::open(&path).unwrap();
-        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), &[merge]).unwrap();
+        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), [merge]).unwrap();
 
         let page = batcher.next(10);
-        let merge_commit = page.iter().find(|commit| commit.oid == merge).expect("merge commit is returned");
+        let merge_commit = page.iter().find(|commit| commit.oid == git2_to_gix_oid(merge)).expect("merge commit is returned");
 
         assert_eq!(merge_commit.parent_ids.iter().map(|id| Oid::from_bytes(id.as_slice()).unwrap()).collect::<Vec<_>>(), vec![main, side]);
     }
@@ -259,16 +258,16 @@ mod tests {
         let first = commit(&repo, "first.txt", "first");
         let second = commit(&repo, "second.txt", "second");
         let gix_repo = gix::open(&path).unwrap();
-        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), &[second]).unwrap();
+        let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), [second]).unwrap();
 
-        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), vec![second, first]);
+        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), gix_oids([second, first]));
         assert!(batcher.next(10).is_empty());
         assert!(batcher.next(10).is_empty());
 
         let third = commit(&repo, "third.txt", "third");
         let gix_repo = gix::open(&path).unwrap();
-        batcher.reset(&gix_repo, &HashSet::new(), &[third]).unwrap();
+        batcher.reset(&gix_repo, &HashSet::new(), [third]).unwrap();
 
-        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), vec![third, second, first]);
+        assert_eq!(batcher.next(10).iter().map(|commit| commit.oid).collect::<Vec<_>>(), gix_oids([third, second, first]));
     }
 }

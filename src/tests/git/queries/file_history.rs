@@ -1,4 +1,5 @@
 use super::*;
+use crate::core::oids::git2_to_gix_oid;
 use git2::{Oid, Repository, Signature};
 use std::{
     fs,
@@ -46,7 +47,7 @@ fn commit_file(repo: &Repository, root: &Path, file: &str, content: &str, messag
 }
 
 fn file_status_from_repo(repo: &gix::Repository, oid: Oid, path: &str) -> Option<FileStatus> {
-    super::changed_file_status_at_commit_from_repo(repo, gix::ObjectId::from_bytes_or_panic(oid.as_bytes()), path).unwrap()
+    super::changed_file_status_at_commit_from_repo(repo, git2_to_gix_oid(oid), path).unwrap()
 }
 
 #[test]

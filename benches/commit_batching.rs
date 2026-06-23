@@ -42,7 +42,7 @@ fn commit_batch_fixture(fixture: RepoWalkFixture) -> CommitBatchFixture {
     let repo = gix::open(&fixture.path).unwrap();
     let amount = fixture.amount;
     let expected_commits = fixture.expected_commits;
-    let batcher = Batcher::new(&repo, &fixture.hidden_branch_names, &[]).unwrap();
+    let batcher = Batcher::new(&repo, &fixture.hidden_branch_names, std::iter::empty::<gix::ObjectId>()).unwrap();
 
     CommitBatchFixture { _fixture: fixture, batcher, _repo: repo, scratch: Vec::with_capacity(amount), amount, expected_commits }
 }
@@ -75,8 +75,8 @@ fn sorted_oid_pages(mut fixture: CommitBatchFixture) -> usize {
 
 fn initialize_batcher(fixture: BatcherInitFixture) -> usize {
     let repo = gix::open(&fixture.path).unwrap();
-    let batcher = Batcher::new(&repo, &fixture.hidden_branch_names, &[]).unwrap();
-    black_box(batcher.remaining())
+    black_box(Batcher::new(&repo, &fixture.hidden_branch_names, std::iter::empty::<gix::ObjectId>()).unwrap());
+    0
 }
 
 fn walker_walk_pages(fixture: RepoWalkFixture, full_walk: bool) -> usize {

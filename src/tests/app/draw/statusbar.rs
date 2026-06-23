@@ -3,6 +3,7 @@ use crate::{
     app::{app::Focus, state::layout::Layout},
     core::{
         branches::Branches,
+        oids::git2_to_gix_oid,
         submodules::SubmoduleStackEntry,
         worktrees::{WorktreeEntry, WorktreeKind},
     },
@@ -47,7 +48,7 @@ fn current_worktree(path: PathBuf, branch: Option<&str>, head: Oid) -> WorktreeE
         name: path.file_name().and_then(|name| name.to_str()).unwrap_or("repo").to_string(),
         path,
         branch: branch.map(str::to_string),
-        head: Some(head),
+        head: Some(git2_to_gix_oid(head)),
         alias: None,
         kind: WorktreeKind::Main,
         is_current: true,

@@ -1,10 +1,27 @@
 use crate::core::chunk::NONE;
 use git2::Oid;
+use gix::ObjectId;
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
 type OidFingerprint = u32;
 const OID_CHUNK_SIZE: usize = 32_768;
+
+pub trait IntoGixOid {
+    fn into_gix_oid(self) -> ObjectId;
+}
+
+impl IntoGixOid for ObjectId {
+    fn into_gix_oid(self) -> ObjectId {
+        self
+    }
+}
+
+impl IntoGixOid for Oid {
+    fn into_gix_oid(self) -> ObjectId {
+        git2_to_gix_oid(self)
+    }
+}
 
 pub fn git2_to_gix_oid(oid: Oid) -> gix::ObjectId {
     gix::ObjectId::from_bytes_or_panic(oid.as_bytes())
@@ -18,15 +35,10 @@ pub fn gix_to_git2_oid(oid: gix::ObjectId) -> Oid {
     Oid::from_bytes(oid.as_bytes()).unwrap()
 }
 
-pub fn gix_time_to_git2_time(time: gix::date::Time) -> git2::Time {
-    debug_assert_eq!(time.offset % 60, 0);
-    git2::Time::new(time.seconds, time.offset / 60)
-}
-
 // Stores full OIDs once and passes small numeric aliases through UI data structures.
 #[derive(Clone)]
 pub struct Oids {
-    pub zero: Oid,
+    pub zero: ObjectId,
     pub oids: OidStore,
     aliases: AliasIndex,
     alias_collisions: FxHashMap<OidFingerprint, CollisionBucket>,
@@ -36,17 +48,13 @@ pub struct Oids {
 
 #[derive(Clone, Default)]
 pub struct OidStore {
-    chunks: Vec<Vec<Oid>>,
+    chunks: Vec<Vec<ObjectId>>,
     len: usize,
 }
 
 impl OidStore {
     pub fn len(&self) -> usize {
         self.len
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
     }
 
     fn capacity(&self) -> usize {
@@ -61,7 +69,7 @@ impl OidStore {
         }
     }
 
-    fn push(&mut self, oid: Oid) {
+    fn push(&mut self, oid: ObjectId) {
         if self.chunks.last().is_none_or(|chunk| chunk.len() == OID_CHUNK_SIZE) {
             self.chunks.push(Vec::with_capacity(OID_CHUNK_SIZE));
         }
@@ -69,7 +77,7 @@ impl OidStore {
         self.len += 1;
     }
 
-    fn get(&self, idx: usize) -> Option<&Oid> {
+    fn get(&self, idx: usize) -> Option<&ObjectId> {
         if idx >= self.len {
             return None;
         }
@@ -78,7 +86,7 @@ impl OidStore {
         self.chunks.get(chunk).and_then(|chunk| chunk.get(offset))
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Oid> {
+    pub fn iter(&self) -> impl Iterator<Item = &ObjectId> {
         self.chunks.iter().flat_map(|chunk| chunk.iter())
     }
 
@@ -154,18 +162,18 @@ impl AliasIndex {
 #[derive(Clone)]
 enum CollisionBucket {
     Few(Vec<u32>),
-    Many(FxHashMap<Oid, u32>),
+    Many(FxHashMap<ObjectId, u32>),
 }
 
 impl CollisionBucket {
-    fn find(&self, oids: &OidStore, oid: Oid) -> Option<u32> {
+    fn find(&self, oids: &OidStore, oid: ObjectId) -> Option<u32> {
         match self {
             CollisionBucket::Few(aliases) => aliases.iter().copied().find(|alias| oids.get(*alias as usize).is_some_and(|current| *current == oid)),
             CollisionBucket::Many(aliases) => aliases.get(&oid).copied(),
         }
     }
 
-    fn push(&mut self, oids: &OidStore, oid: Oid, alias: u32) {
+    fn push(&mut self, oids: &OidStore, oid: ObjectId, alias: u32) {
         match self {
             CollisionBucket::Few(aliases) if aliases.len() < 8 => aliases.push(alias),
             CollisionBucket::Few(aliases) => {
@@ -194,7 +202,7 @@ impl CollisionBucket {
 
 impl Default for Oids {
     fn default() -> Self {
-        Oids { zero: Oid::zero(), oids: OidStore::default(), aliases: AliasIndex::default(), alias_collisions: FxHashMap::default(), sorted_aliases: vec![NONE], stashes: vec![] }
+        Oids { zero: ObjectId::null(gix::hash::Kind::Sha1), oids: OidStore::default(), aliases: AliasIndex::default(), alias_collisions: FxHashMap::default(), sorted_aliases: vec![NONE], stashes: vec![] }
     }
 }
 
@@ -224,7 +232,8 @@ impl Oids {
         self.stashes.shrink_to_fit();
     }
 
-    pub fn get_alias_by_oid(&mut self, oid: Oid) -> u32 {
+    pub fn get_alias_by_oid(&mut self, oid: impl IntoGixOid) -> u32 {
+        let oid = oid.into_gix_oid();
         // Assign aliases lazily so refs, commits, tags, and stashes share one namespace.
         let fingerprint = oid_fingerprint(oid);
         if let Some(alias) = self.aliases.get(fingerprint) {
@@ -254,7 +263,8 @@ impl Oids {
         alias
     }
 
-    pub fn get_existing_alias(&self, oid: Oid) -> Option<u32> {
+    pub fn get_existing_alias(&self, oid: impl IntoGixOid) -> Option<u32> {
+        let oid = oid.into_gix_oid();
         let fingerprint = oid_fingerprint(oid);
         let alias = self.aliases.get(fingerprint)?;
         if self.oids.get(alias as usize).is_some_and(|current| *current == oid) {
@@ -267,13 +277,12 @@ impl Oids {
         *self.sorted_aliases.get(idx).unwrap()
     }
 
-    pub fn get_oid_by_alias(&self, alias: u32) -> &Oid {
+    pub fn get_oid_by_alias(&self, alias: u32) -> &ObjectId {
         self.oids.get(alias as usize).unwrap_or(&self.zero)
     }
 
-    pub fn get_oid_by_idx(&self, idx: usize) -> &Oid {
-        let alias = *self.sorted_aliases.get(idx).unwrap_or(&NONE);
-        self.oids.get(alias as usize).unwrap_or(&self.zero)
+    pub fn get_git2_oid_by_alias(&self, alias: u32) -> Oid {
+        gix_to_git2_oid(*self.get_oid_by_alias(alias))
     }
 
     pub fn get_sorted_aliases(&self) -> &Vec<u32> {
@@ -288,12 +297,12 @@ impl Oids {
         self.sorted_aliases.len()
     }
 
-    pub fn is_zero(&self, oid: &Oid) -> bool {
+    pub fn is_zero(&self, oid: &ObjectId) -> bool {
         self.zero == *oid
     }
 }
 
-fn oid_fingerprint(oid: Oid) -> OidFingerprint {
+fn oid_fingerprint(oid: ObjectId) -> OidFingerprint {
     let bytes = oid.as_bytes();
     u32::from_be_bytes(bytes[..4].try_into().unwrap())
 }

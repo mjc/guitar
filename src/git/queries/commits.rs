@@ -3,7 +3,7 @@ use crate::core::{
     oids::Oids,
 };
 use crate::helpers::branch_visibility::branch_name_from_ref;
-use git2::{Oid, Repository, Time};
+use git2::Repository;
 use gix::prelude::HeaderExt;
 use std::collections::HashMap;
 
@@ -20,7 +20,7 @@ pub fn get_tip_oids(repo: &gix::Repository, oids: &mut Oids) -> (HashMap<u32, Ve
 
         for reference in references {
             let Ok(reference) = reference else { continue };
-            let Some(oid) = reference.try_id().map(|id| Oid::from_bytes(id.detach().as_bytes()).unwrap()) else { continue };
+            let Some(oid) = reference.try_id().map(|id| id.detach()) else { continue };
             let alias = oids.get_alias_by_oid(oid);
 
             if let Some(name) = branch_name_from_ref(reference.name().as_bstr()) {
@@ -58,10 +58,9 @@ pub fn get_tag_oids(repo: &gix::Repository, oids: &mut Oids) -> HashMap<u32, Vec
         if header.kind() != gix::object::Kind::Commit {
             continue;
         }
-        let oid = Oid::from_bytes(id.as_bytes()).unwrap();
         let tag_name = String::from_utf8_lossy(name).into_owned();
 
-        let alias = oids.get_alias_by_oid(oid);
+        let alias = oids.get_alias_by_oid(id);
         local.entry(alias).or_default().push(tag_name);
     }
 
@@ -94,20 +93,6 @@ pub fn get_current_branch(repo: &Repository) -> Option<String> {
     head.shorthand().map(|s| s.to_string())
 }
 
-// Return all git timestamp variants for refs that need date metadata.
-pub fn get_timestamps(repo: &Repository, _branches: &HashMap<Oid, Vec<String>>) -> HashMap<Oid, (Time, Time, Time)> {
-    _branches
-        .keys()
-        .map(|&sha| {
-            let commit = repo.find_commit(sha).unwrap();
-            let author_time = commit.author().when();
-            let committer_time = commit.committer().when();
-            let time = commit.time();
-            (sha, (time, committer_time, author_time))
-        })
-        .collect()
-}
-
 pub fn get_git_user_info(repo: &Repository) -> Result<(Option<String>, Option<String>), git2::Error> {
     let config = repo.config()?;
     let name = config.get_string("user.name").ok();
@@ -129,7 +114,7 @@ pub fn get_stashed_commits(repo: &gix::Repository, oids: &mut Oids) -> Vec<u32> 
     };
 
     for entry in logs.filter_map(Result::ok) {
-        let alias = oids.get_alias_by_oid(Oid::from_bytes(entry.new_oid.as_bytes()).unwrap());
+        let alias = oids.get_alias_by_oid(entry.new_oid);
         stashes.push(alias);
     }
 

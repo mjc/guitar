@@ -1624,8 +1624,8 @@ impl App {
                     .iter()
                     .enumerate()
                     .filter_map(|(idx, &alias)| {
-                        let child_oid = self.oids.get_oid_by_alias(alias);
-                        let commit = repo.find_commit(*child_oid).ok()?;
+                        let child_oid = self.oids.get_git2_oid_by_alias(alias);
+                        let commit = repo.find_commit(child_oid).ok()?;
                         if commit.parent_ids().any(|parent_oid| parent_oid == oid) { Some(idx) } else { None }
                     })
                     .collect();

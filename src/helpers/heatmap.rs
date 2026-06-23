@@ -48,6 +48,10 @@ pub fn commits_per_day(repo: &gix::Repository, oids: &[Oid]) -> [usize; TOTAL_DA
 }
 
 fn commits_per_day_in_order(repo: &gix::Repository, oids: impl IntoIterator<Item = Oid>) -> [usize; TOTAL_DAYS] {
+    commits_per_day_in_gix_order(repo, oids.into_iter().map(git2_to_gix_oid))
+}
+
+fn commits_per_day_in_gix_order(repo: &gix::Repository, oids: impl IntoIterator<Item = gix::ObjectId>) -> [usize; TOTAL_DAYS] {
     // Use UTC dates so commits near midnight are bucketed consistently.
     let today: NaiveDate = Utc::now().date_naive();
     let mut counts = [0usize; TOTAL_DAYS];
@@ -55,7 +59,7 @@ fn commits_per_day_in_order(repo: &gix::Repository, oids: impl IntoIterator<Item
 
     for oid in oids {
         object_buf.clear();
-        let commit = match repo.objects.find_commit(git2_to_gix_oid(oid).as_ref(), &mut object_buf) {
+        let commit = match repo.objects.find_commit(oid.as_ref(), &mut object_buf) {
             Ok(c) => c,
             Err(_) => continue,
         };
@@ -92,7 +96,7 @@ pub fn build_heatmap(repo: &gix::Repository, oids: &[Oid]) -> [[usize; WEEKS]; D
 }
 
 pub fn build_heatmap_from_sorted_aliases(repo: &gix::Repository, oids: &Oids) -> [[usize; WEEKS]; DAYS] {
-    build_heatmap_from_counts(commits_per_day_in_order(repo, oids.get_sorted_aliases().iter().map(|alias| *oids.get_oid_by_alias(*alias))))
+    build_heatmap_from_counts(commits_per_day_in_gix_order(repo, oids.get_sorted_aliases().iter().map(|alias| *oids.get_oid_by_alias(*alias))))
 }
 
 fn build_heatmap_from_counts(counts: [usize; TOTAL_DAYS]) -> [[usize; WEEKS]; DAYS] {

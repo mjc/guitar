@@ -1,13 +1,10 @@
-use crate::core::oids::{gix_time_to_git2_time, gix_to_git2_oid};
-use git2::{Oid, Time};
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeadReflogEntry {
     pub selector: String,
-    pub old_oid: Oid,
-    pub new_oid: Oid,
+    pub old_oid: gix::ObjectId,
+    pub new_oid: gix::ObjectId,
     pub message: String,
-    pub time: Time,
+    pub time: gix::date::Time,
 }
 
 pub fn get_head_reflog_entries(repo: &gix::Repository) -> Result<Vec<HeadReflogEntry>, git2::Error> {
@@ -21,15 +18,12 @@ pub fn get_head_reflog_entries(repo: &gix::Repository) -> Result<Vec<HeadReflogE
 
     for (idx, entry) in reflog.enumerate() {
         let entry = entry.map_err(|error| git2::Error::from_str(&error.to_string()))?;
-        let new_oid = gix_to_git2_oid(entry.new_oid);
-        if new_oid.is_zero() || repo.find_commit(entry.new_oid).is_err() {
+        if entry.new_oid.is_null() || repo.find_commit(entry.new_oid).is_err() {
             continue;
         }
 
         let message = if entry.message.is_empty() { "reflog".to_string() } else { String::from_utf8_lossy(entry.message.as_ref()).to_string() };
-        let time = gix_time_to_git2_time(entry.signature.time);
-
-        entries.push(HeadReflogEntry { selector: format!("HEAD@{{{idx}}}"), old_oid: gix_to_git2_oid(entry.previous_oid), new_oid, message, time });
+        entries.push(HeadReflogEntry { selector: format!("HEAD@{{{idx}}}"), old_oid: entry.previous_oid, new_oid: entry.new_oid, message, time: entry.signature.time });
     }
 
     Ok(entries)

@@ -3,7 +3,7 @@ use crate::{
         batcher::{Batcher, WalkCommit},
         buffer::Buffer,
         chunk::{Chunk, LaneRef, NONE},
-        oids::{Oids, git2_to_gix_oid, gix_to_git2_oid},
+        oids::Oids,
     },
     git::gix::enable_history_object_cache,
     git::queries::commits::{get_sorted_oids, get_stashed_commits, get_tag_oids, get_tip_oids},
@@ -76,8 +76,7 @@ impl Walker {
         let stash_aliases: StdHashSet<u32> = oids.stashes.iter().copied().collect();
         let mut stash_parent_aliases = Vec::with_capacity(oids.stashes.len());
         for stash_alias in oids.stashes.clone() {
-            let parent_oid =
-                gix_repo.find_commit(git2_to_gix_oid(*oids.get_oid_by_alias(stash_alias))).ok().and_then(|commit| commit.parent_ids().next().map(|parent| gix_to_git2_oid(parent.detach())));
+            let parent_oid = gix_repo.find_commit(*oids.get_oid_by_alias(stash_alias)).ok().and_then(|commit| commit.parent_ids().next().map(|parent| parent.detach()));
             if let Some(parent_oid) = parent_oid {
                 let parent_alias = oids.get_alias_by_oid(parent_oid);
                 stash_parent_aliases.push((stash_alias, parent_alias));
@@ -101,7 +100,7 @@ impl Walker {
         extra_roots.extend(oids.stashes.iter().copied().map(|alias| *oids.get_oid_by_alias(alias)));
         extra_roots.extend(head_reflog_roots);
 
-        let batcher = Batcher::new(&gix_repo, &hidden_branch_names, &extra_roots)?;
+        let batcher = Batcher::new(&gix_repo, &hidden_branch_names, extra_roots)?;
         let sorted_batch_capacity = amount.saturating_add(oids.stashes.len());
 
         Ok(Self {
@@ -131,7 +130,7 @@ impl Walker {
     pub fn walk(&mut self) -> bool {
         // Without HEAD there is no stable parent for the uncommitted pseudo-row.
         let head_oid = match self.gix_repo.head_id().ok() {
-            Some(oid) => gix_to_git2_oid(oid.detach()),
+            Some(oid) => oid.detach(),
             None => {
                 return false;
             },
@@ -179,8 +178,8 @@ impl Walker {
                 debug_assert_eq!(self.oids.get_existing_alias(commit.oid), Some(alias));
 
                 // Only two parents are modeled because the renderer draws one merge edge.
-                let parent_a_oid = commit.parent_ids.first().map(|parent| gix_to_git2_oid(*parent));
-                let parent_b_oid = commit.parent_ids.get(1).map(|parent| gix_to_git2_oid(*parent));
+                let parent_a_oid = commit.parent_ids.first().copied();
+                let parent_b_oid = commit.parent_ids.get(1).copied();
                 (parent_a_oid.map(|p| self.oids.get_alias_by_oid(p)).unwrap_or(NONE), parent_b_oid.map(|p| self.oids.get_alias_by_oid(p)).unwrap_or(NONE))
             };
 

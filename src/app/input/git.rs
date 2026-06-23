@@ -383,7 +383,7 @@ impl App {
                 let Some(alias) = self.stash_alias_at_pane_selection() else {
                     return;
                 };
-                *self.oids.get_oid_by_alias(alias)
+                self.oids.get_git2_oid_by_alias(alias)
             },
             _ => return,
         };
@@ -423,7 +423,7 @@ impl App {
                 let Some(alias) = self.stash_alias_at_pane_selection() else {
                     return;
                 };
-                *self.oids.get_oid_by_alias(alias)
+                self.oids.get_git2_oid_by_alias(alias)
             },
             _ => return,
         };

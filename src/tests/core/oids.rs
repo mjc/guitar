@@ -17,7 +17,7 @@ fn aliases_are_stable_for_repeated_oid() {
     let second = oids.get_alias_by_oid(oid);
 
     assert_eq!(first, second);
-    assert_eq!(oids.get_oid_by_alias(first), &oid);
+    assert_eq!(oids.get_git2_oid_by_alias(first), oid);
     assert_eq!(oids.oids.len(), 1);
 }
 
@@ -33,8 +33,8 @@ fn aliases_keep_distinct_oids_with_shared_prefix() {
     assert_ne!(first, second);
     assert_eq!(oids.get_alias_by_oid(first_oid), first);
     assert_eq!(oids.get_alias_by_oid(second_oid), second);
-    assert_eq!(oids.get_oid_by_alias(first), &first_oid);
-    assert_eq!(oids.get_oid_by_alias(second), &second_oid);
+    assert_eq!(oids.get_git2_oid_by_alias(first), first_oid);
+    assert_eq!(oids.get_git2_oid_by_alias(second), second_oid);
 }
 
 #[test]
@@ -79,8 +79,8 @@ fn aliases_lookup_across_oid_chunk_boundaries() {
 
     assert_eq!(first_alias, 0);
     assert_eq!(boundary_alias, OID_CHUNK_SIZE as u32);
-    assert_eq!(oids.get_oid_by_alias(first_alias), &first);
-    assert_eq!(oids.get_oid_by_alias(boundary_alias), &boundary);
+    assert_eq!(oids.get_git2_oid_by_alias(first_alias), first);
+    assert_eq!(oids.get_git2_oid_by_alias(boundary_alias), boundary);
     assert_eq!(oids.get_existing_alias(first), Some(first_alias));
     assert_eq!(oids.get_existing_alias(boundary), Some(boundary_alias));
 }

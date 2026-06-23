@@ -1,4 +1,5 @@
-use super::*;
+use crate::core::oids::git2_to_gix_oid;
+use git2::Oid;
 use crate::git::queries::reflogs::get_head_reflog_entries;
 use git2::{Repository, ResetType, Signature};
 use std::{
@@ -53,7 +54,7 @@ fn head_reflog_keeps_commit_after_reset() {
     let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
     let entries = get_head_reflog_entries(&gix_repo).unwrap();
 
-    assert!(entries.iter().any(|entry| entry.new_oid == lost && entry.selector.starts_with("HEAD@{")));
+    assert!(entries.iter().any(|entry| entry.new_oid == git2_to_gix_oid(lost) && entry.selector.starts_with("HEAD@{")));
     assert_eq!(repo.head().unwrap().target(), Some(base));
 }
 
@@ -71,7 +72,7 @@ fn head_reflog_skips_entries_that_no_longer_point_to_commits() {
     let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
     let entries = get_head_reflog_entries(&gix_repo).unwrap();
 
-    assert!(entries.iter().any(|entry| entry.new_oid == lost));
+    assert!(entries.iter().any(|entry| entry.new_oid == git2_to_gix_oid(lost)));
     assert!(!entries.iter().any(|entry| entry.message == "skip-me"));
     assert_eq!(entries.first().map(|entry| entry.selector.as_str()), Some("HEAD@{1}"));
 }

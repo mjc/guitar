@@ -1,4 +1,5 @@
 use super::*;
+use crate::core::oids::git2_to_gix_oid;
 use crate::helpers::symbols::SymbolTheme;
 use git2::{Oid, Repository, Signature, build::CheckoutBuilder};
 use im::HashSet;
@@ -157,7 +158,7 @@ fn graph_service_updates_worktrees_from_command() {
         name: "repo".to_string(),
         path,
         branch: Some("master".to_string()),
-        head: Some(head),
+        head: Some(git2_to_gix_oid(head)),
         alias: None,
         kind: crate::core::worktrees::WorktreeKind::Main,
         is_current: true,

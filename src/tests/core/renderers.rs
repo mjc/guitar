@@ -2,6 +2,7 @@ use super::*;
 use crate::core::{
     chunk::{LaneRef, NONE},
     graph_service::{GraphBranchLabel, GraphReflogLabel, GraphTagLabel},
+    oids::git2_to_gix_oid,
     worktrees::{WorktreeEntry, WorktreeKind},
 };
 use crate::helpers::colors::ColorPicker;
@@ -297,7 +298,7 @@ fn graph_projection_uses_current_worktree_symbol_when_row_has_unbranched_worktre
         name: "wt".to_string(),
         path: PathBuf::from("/tmp/wt"),
         branch: Some("main".to_string()),
-        head: Some(row.oid),
+        head: Some(git2_to_gix_oid(row.oid)),
         alias: Some(row.alias),
         kind: WorktreeKind::Linked,
         is_current: true,
@@ -344,7 +345,7 @@ fn message_projection_toggles_refs_without_hiding_reflog_labels() {
         name: "wt".to_string(),
         path: PathBuf::from("/tmp/wt"),
         branch: Some("main".to_string()),
-        head: Some(row.oid),
+        head: Some(git2_to_gix_oid(row.oid)),
         alias: Some(row.alias),
         kind: WorktreeKind::Linked,
         is_current: false,
