@@ -1,4 +1,4 @@
-use crate::core::{oids::gix_to_git2_oid, submodules::SubmoduleEntry};
+use crate::core::submodules::SubmoduleEntry;
 use git2::Repository;
 use gix::bstr::ByteSlice;
 use std::fs::File;
@@ -153,9 +153,9 @@ pub fn list_submodules(repo: &Repository) -> Result<Vec<SubmoduleEntry>, git2::E
         let status = submodule.status(gix::submodule::config::Ignore::None, false).ok();
         let state = status.as_ref().map(|status| status.state).unwrap_or_else(|| submodule.state().unwrap_or_default());
         let branch = opened.as_ref().and_then(current_branch).or_else(|| configured_branch(submodule.branch().ok().flatten()));
-        let head = submodule.head_id().ok().flatten().map(gix_to_git2_oid);
-        let index = submodule.index_id().ok().flatten().map(gix_to_git2_oid);
-        let workdir_id = opened.as_ref().and_then(|repo| repo.head_id().ok().map(|id| gix_to_git2_oid(id.detach())));
+        let head = submodule.head_id().ok().flatten();
+        let index = submodule.index_id().ok().flatten();
+        let workdir_id = opened.as_ref().and_then(|repo| repo.head_id().ok().map(|id| id.detach()));
         let absolute_path = workdir.join(&path);
 
         let (has_modified_content, has_untracked_content) = status.as_ref().and_then(|status| status.changes.as_ref().map(|changes| changed_content_flags(changes))).unwrap_or((false, false));

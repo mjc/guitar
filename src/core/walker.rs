@@ -18,7 +18,7 @@ use std::{
 
 // Walks git history into lane snapshots and ref lookup tables.
 pub struct Walker {
-    // gitoxide repository shared with the batcher and commit metadata lookups.
+    // Repository handle shared with the batcher and commit metadata lookups.
     pub gix_repo: gix::Repository,
 
     // Revwalk cursor for incremental history loading.

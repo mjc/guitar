@@ -4,6 +4,7 @@ use guitar::{
         buffer::Buffer,
         chunk::{Chunk, NONE},
         graph_service::{GraphBranchLabel, GraphHistory, GraphRow, GraphTagLabel},
+        oids::git2_to_gix_oid,
         worktrees::{WorktreeEntry, WorktreeKind},
     },
     helpers::{palette::Theme, symbols::SymbolTheme},
@@ -128,6 +129,22 @@ pub struct GraphServiceFixture {
     pub graph_lane_limit: usize,
     pub worktrees: Vec<WorktreeEntry>,
     pub symbols: SymbolTheme,
+}
+
+fn worktree_entry(name: &str, path: PathBuf, branch: String, head: Oid, kind: WorktreeKind, is_current: bool) -> WorktreeEntry {
+    WorktreeEntry {
+        name: name.to_string(),
+        path,
+        branch: Some(branch),
+        head: Some(git2_to_gix_oid(head)),
+        alias: None,
+        kind,
+        is_current,
+        is_valid: true,
+        is_prunable: false,
+        locked_reason: None,
+        is_dirty: false,
+    }
 }
 
 #[allow(dead_code)]
@@ -306,58 +323,10 @@ pub fn graph_service_fixture(rounds: usize) -> GraphServiceFixture {
     let _ = repo.stash_save(&sig, "bench stash", Some(StashFlags::INCLUDE_UNTRACKED));
 
     let worktrees = vec![
-        WorktreeEntry {
-            name: "main".to_string(),
-            path: path.clone(),
-            branch: Some("topic".to_string()),
-            head: Some(current_base),
-            alias: None,
-            kind: WorktreeKind::Main,
-            is_current: true,
-            is_valid: true,
-            is_prunable: false,
-            locked_reason: None,
-            is_dirty: false,
-        },
-        WorktreeEntry {
-            name: "left".to_string(),
-            path: path.join("wt-left"),
-            branch: Some(format!("left-{}", rounds.saturating_sub(1))),
-            head: Some(last_left),
-            alias: None,
-            kind: WorktreeKind::Linked,
-            is_current: false,
-            is_valid: true,
-            is_prunable: false,
-            locked_reason: None,
-            is_dirty: false,
-        },
-        WorktreeEntry {
-            name: "right".to_string(),
-            path: path.join("wt-right"),
-            branch: Some(format!("right-{}", rounds.saturating_sub(1))),
-            head: Some(last_right),
-            alias: None,
-            kind: WorktreeKind::Linked,
-            is_current: false,
-            is_valid: true,
-            is_prunable: false,
-            locked_reason: None,
-            is_dirty: false,
-        },
-        WorktreeEntry {
-            name: "merge".to_string(),
-            path: path.join("wt-merge"),
-            branch: Some(format!("left-{}", rounds.saturating_sub(1))),
-            head: Some(last_merge),
-            alias: None,
-            kind: WorktreeKind::Linked,
-            is_current: false,
-            is_valid: true,
-            is_prunable: false,
-            locked_reason: None,
-            is_dirty: false,
-        },
+        worktree_entry("main", path.clone(), "topic".to_string(), current_base, WorktreeKind::Main, true),
+        worktree_entry("left", path.join("wt-left"), format!("left-{}", rounds.saturating_sub(1)), last_left, WorktreeKind::Linked, false),
+        worktree_entry("right", path.join("wt-right"), format!("right-{}", rounds.saturating_sub(1)), last_right, WorktreeKind::Linked, false),
+        worktree_entry("merge", path.join("wt-merge"), format!("left-{}", rounds.saturating_sub(1)), last_merge, WorktreeKind::Linked, false),
     ];
 
     GraphServiceFixture {

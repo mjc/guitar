@@ -62,6 +62,22 @@ fn graph_row_with_alias(index: usize, alias: u32) -> GraphRow {
     row
 }
 
+fn worktree_entry(row: &GraphRow, is_current: bool) -> WorktreeEntry {
+    WorktreeEntry {
+        name: "wt".to_string(),
+        path: PathBuf::from("/tmp/wt"),
+        branch: Some("main".to_string()),
+        head: Some(git2_to_gix_oid(row.oid)),
+        alias: Some(row.alias),
+        kind: WorktreeKind::Linked,
+        is_current,
+        is_valid: true,
+        is_prunable: false,
+        locked_reason: None,
+        is_dirty: false,
+    }
+}
+
 fn merge_right_from_history(prev_lane_parent: u32) -> GraphHistory {
     GraphHistory::from_rows(vec![
         vec![Chunk::commit(20, prev_lane_parent, NONE), Chunk::commit(21, 200, NONE), Chunk::dummy()],
@@ -294,19 +310,7 @@ fn graph_projection_uses_current_worktree_symbol_when_row_has_unbranched_worktre
     let theme = Theme::classic();
     let symbols = SymbolTheme::main();
     let mut row = graph_row_with_alias(0, 1);
-    row.worktrees = vec![WorktreeEntry {
-        name: "wt".to_string(),
-        path: PathBuf::from("/tmp/wt"),
-        branch: Some("main".to_string()),
-        head: Some(git2_to_gix_oid(row.oid)),
-        alias: Some(row.alias),
-        kind: WorktreeKind::Linked,
-        is_current: true,
-        is_valid: true,
-        is_prunable: false,
-        locked_reason: None,
-        is_dirty: false,
-    }];
+    row.worktrees = vec![worktree_entry(&row, true)];
     row.has_current_worktree = true;
     let history = GraphHistory::from_rows(vec![vec![Chunk::commit(1, NONE, NONE)]]);
 
@@ -341,19 +345,7 @@ fn message_projection_toggles_refs_without_hiding_reflog_labels() {
     row.branches = vec![GraphBranchLabel { name: "main".to_string(), is_local: true, lane: Some(LaneRef::new(0, false)) }];
     row.tags = vec![GraphTagLabel { name: "v1".to_string(), lane: Some(LaneRef::new(0, false)) }];
     row.is_stash = true;
-    row.worktrees = vec![WorktreeEntry {
-        name: "wt".to_string(),
-        path: PathBuf::from("/tmp/wt"),
-        branch: Some("main".to_string()),
-        head: Some(git2_to_gix_oid(row.oid)),
-        alias: Some(row.alias),
-        kind: WorktreeKind::Linked,
-        is_current: false,
-        is_valid: true,
-        is_prunable: false,
-        locked_reason: None,
-        is_dirty: false,
-    }];
+    row.worktrees = vec![worktree_entry(&row, false)];
     row.reflog = Some(GraphReflogLabel { selector: "HEAD@{0}".to_string(), message: "commit: summary".to_string(), lane: Some(LaneRef::new(0, false)) });
 
     let shown = render_message_projection(&theme, &symbols, &[row.clone()], true, true, 0, &UncommittedChanges::default(), true);

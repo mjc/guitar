@@ -1,5 +1,5 @@
 use super::*;
-use crate::git::actions::submodules::stage_submodule_head;
+use crate::{core::oids::git2_to_gix_oid, git::actions::submodules::stage_submodule_head};
 use git2::{Repository, Signature, build::CheckoutBuilder};
 use std::{
     env, fs,
@@ -262,7 +262,7 @@ fn reports_staged_submodule_pointer_changes_as_index_modified() {
     assert!(!entry.has_new_commits);
     assert!(!entry.is_workdir_modified);
     assert!(entry.is_dirty());
-    assert_eq!(entry.index, Some(advanced));
+    assert_eq!(entry.index, Some(git2_to_gix_oid(advanced)));
     assert_ne!(entry.head, entry.index);
 }
 

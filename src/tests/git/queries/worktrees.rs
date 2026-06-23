@@ -1,7 +1,10 @@
 use super::*;
-use crate::git::{
-    actions::worktrees::{create_worktree, lock_worktree, remove_worktree, unlock_worktree},
-    queries::commits::get_current_branch,
+use crate::{
+    core::oids::git2_to_gix_oid,
+    git::{
+        actions::worktrees::{create_worktree, lock_worktree, remove_worktree, unlock_worktree},
+        queries::commits::get_current_branch,
+    },
 };
 use git2::{Repository, Signature};
 use std::{
@@ -62,7 +65,7 @@ fn lists_main_and_linked_worktrees_with_stable_metadata() {
     assert!(entries[0].is_main());
     assert!(entries[0].is_current);
     assert_eq!(entries[0].branch.as_deref(), get_current_branch(&repo).as_deref());
-    assert_eq!(entries[0].head, Some(oid));
+    assert_eq!(entries[0].head, Some(git2_to_gix_oid(oid)));
 
     let linked_names: Vec<_> = entries.iter().skip(1).map(|entry| entry.name.as_str()).collect();
     assert_eq!(linked_names, vec!["alpha", "zeta"]);
@@ -72,7 +75,7 @@ fn lists_main_and_linked_worktrees_with_stable_metadata() {
         assert!(entry.is_valid);
         assert!(!entry.is_current);
         assert_eq!(entry.branch.as_deref(), Some(entry.name.as_str()));
-        assert_eq!(entry.head, Some(oid));
+        assert_eq!(entry.head, Some(git2_to_gix_oid(oid)));
         assert!(!entry.is_dirty);
         assert!(entry.locked_reason.is_none());
         assert!(!entry.is_prunable);
@@ -97,10 +100,10 @@ fn marks_current_linked_worktree() {
 
     assert!(linked.is_current);
     assert_eq!(linked.branch.as_deref(), Some("feature"));
-    assert_eq!(linked.head, Some(oid));
+    assert_eq!(linked.head, Some(git2_to_gix_oid(oid)));
     assert!(main.is_main());
     assert!(!main.is_current);
-    assert_eq!(main.head, Some(oid));
+    assert_eq!(main.head, Some(git2_to_gix_oid(oid)));
 }
 
 #[test]
@@ -157,7 +160,7 @@ fn metadata_listing_skips_dirty_scan_but_keeps_identity() {
     let main = entries.iter().find(|entry| entry.is_main()).unwrap();
 
     assert!(main.is_current);
-    assert_eq!(main.head, Some(oid));
+    assert_eq!(main.head, Some(git2_to_gix_oid(oid)));
     assert_eq!(main.branch.as_deref(), get_current_branch(&repo).as_deref());
     assert!(!main.is_dirty);
 }

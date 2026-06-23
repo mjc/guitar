@@ -104,7 +104,7 @@ fn stages_and_unstages_submodule_pointer() {
     stage_submodule_head(&parent, "deps/child").unwrap();
 
     let staged = list_submodules(&parent).unwrap()[0].clone();
-    assert_eq!(staged.index, Some(advanced));
+    assert_eq!(staged.index, Some(git2_to_gix_oid(advanced)));
 
     unstage_submodule(&parent, "deps/child").unwrap();
     let unstaged = list_submodules(&parent).unwrap()[0].clone();
@@ -123,8 +123,8 @@ fn stage_all_stages_submodule_pointer_without_staging_inner_content() {
     stage_all(&parent).unwrap();
 
     let entry = list_submodules(&parent).unwrap()[0].clone();
-    assert_eq!(entry.index, Some(advanced));
-    assert_eq!(entry.workdir, Some(advanced));
+    assert_eq!(entry.index, Some(git2_to_gix_oid(advanced)));
+    assert_eq!(entry.workdir, Some(git2_to_gix_oid(advanced)));
     assert!(entry.has_modified_content);
 }
 
@@ -224,8 +224,8 @@ fn update_submodule_refreshes_an_initialized_checkout() {
 
     let clone = Repository::open(&clone_path).unwrap();
     let submodule = list_submodules(&clone).unwrap()[0].clone();
-    assert_eq!(submodule.index, Some(advanced));
-    assert_eq!(submodule.workdir, Some(advanced));
+    assert_eq!(submodule.index, Some(git2_to_gix_oid(advanced)));
+    assert_eq!(submodule.workdir, Some(git2_to_gix_oid(advanced)));
     let sub_repo = Repository::open(clone.workdir().unwrap().join("deps/child")).unwrap();
     assert_eq!(sub_repo.head().unwrap().peel_to_commit().unwrap().id(), advanced);
 }

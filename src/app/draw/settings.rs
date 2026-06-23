@@ -55,7 +55,7 @@ impl App {
             .unwrap_or_else(|| fallback.to_string())
     }
 
-    fn settings_layout_command_state(&self, command: &Command) -> &str {
+    fn settings_layout_command_marker(&self, command: &Command) -> &str {
         let checkbox_enabled = match command {
             Command::ToggleBranches => self.layout_config.is_branches,
             Command::ToggleTags => self.layout_config.is_tags,
@@ -388,30 +388,27 @@ impl App {
         }
     }
 
+    fn append_settings_layout_command_rows(&mut self, lines: &mut Vec<Line<'static>>, width: usize, commands: &[SettingsCommandRow]) {
+        for (idx, (fallback, command, label)) in commands.iter().enumerate() {
+            let key = self.settings_layout_command_key(command, fallback);
+            let label = format!(" {} {}:", key, label());
+            let state = format!(" {} ", self.settings_layout_command_marker(command));
+            let style = self.settings_row_style(idx, self.theme.COLOR_TEXT);
+            lines.push(self.settings_filled_line(&label, &state, width, style));
+            self.add_settings_selection(lines, SettingsSelectionKind::LayoutCommand(command.clone()));
+        }
+    }
+
     fn append_settings_layout(&mut self, lines: &mut Vec<Line<'static>>, width: usize) {
         lines.push(Line::default());
         lines.push(self.settings_section_line(settings_text::PANE_VISIBILITY(), width));
         lines.push(Line::default());
-        for (idx, (fallback, command, label)) in SETTINGS_PANE_COMMANDS.iter().enumerate() {
-            let key = self.settings_layout_command_key(command, fallback);
-            let label = format!(" {} {}:", key, label());
-            let state = format!(" {} ", self.settings_layout_command_state(command));
-            let style = self.settings_row_style(idx, self.theme.COLOR_TEXT);
-            lines.push(self.settings_filled_line(&label, &state, width, style));
-            self.add_settings_selection(lines, SettingsSelectionKind::LayoutCommand(command.clone()));
-        }
+        self.append_settings_layout_command_rows(lines, width, SETTINGS_PANE_COMMANDS);
 
         lines.push(Line::default());
         lines.push(self.settings_section_line(settings_text::GRAPH_METADATA(), width));
         lines.push(Line::default());
-        for (idx, (fallback, command, label)) in SETTINGS_GRAPH_COMMANDS.iter().enumerate() {
-            let key = self.settings_layout_command_key(command, fallback);
-            let label = format!(" {} {}:", key, label());
-            let state = format!(" {} ", self.settings_layout_command_state(command));
-            let style = self.settings_row_style(idx, self.theme.COLOR_TEXT);
-            lines.push(self.settings_filled_line(&label, &state, width, style));
-            self.add_settings_selection(lines, SettingsSelectionKind::LayoutCommand(command.clone()));
-        }
+        self.append_settings_layout_command_rows(lines, width, SETTINGS_GRAPH_COMMANDS);
     }
 
     fn append_settings_shortcuts(&mut self, lines: &mut Vec<Line<'static>>, width: usize) {

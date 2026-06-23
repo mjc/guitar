@@ -1,5 +1,4 @@
 use crate::{
-    core::oids::gix_to_git2_oid,
     core::submodules::SubmoduleEntry,
     git::queries::{
         helpers::{ConflictFile, FileChange, FileStatus, Hunk, UncommittedChanges, deduplicate, diff_to_hunks, walk_tree},
@@ -126,7 +125,7 @@ fn add_submodule_pointer_changes(repo: &Repository, gix_repo: &gix::Repository, 
         if status.is_index_deleted() || (head_entry.is_some() && index_entry.is_none()) {
             push_unique(&mut changes.staged.deleted, path_text.clone());
         }
-        if status.is_index_modified() || head_entry.zip(index_entry.as_ref()).is_some_and(|(head, index)| gix_to_git2_oid(head.object_id()) != index.id) {
+        if status.is_index_modified() || head_entry.zip(index_entry.as_ref()).is_some_and(|(head, index)| head.object_id().as_bytes() != index.id.as_bytes()) {
             push_unique(&mut changes.staged.modified, path_text.clone());
         }
 

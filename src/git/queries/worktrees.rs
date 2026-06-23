@@ -1,9 +1,8 @@
 use crate::{
-    core::oids::gix_to_git2_oid,
     core::worktrees::{WorktreeEntry, WorktreeKind},
     git::queries::helpers::UncommittedChanges,
 };
-use git2::{Error, Oid, Repository};
+use git2::{Error, Repository};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -29,8 +28,8 @@ fn head_branch(repo: &gix::Repository) -> Option<String> {
     head.name().to_string().strip_prefix("refs/heads/").map(str::to_string)
 }
 
-fn head_oid(repo: &gix::Repository) -> Option<Oid> {
-    Some(gix_to_git2_oid(repo.head_id().ok()?.detach()))
+fn head_oid(repo: &gix::Repository) -> Option<gix::ObjectId> {
+    Some(repo.head_id().ok()?.detach())
 }
 
 fn repo_dirty(repo: &gix::Repository) -> bool {

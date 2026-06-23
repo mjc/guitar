@@ -12,7 +12,7 @@ pub struct WalkCommit {
     pub commit_time: Option<i64>,
 }
 
-// Own a lazy gitoxide commit cursor so history pages don't precompute the entire graph.
+// Own a lazy commit cursor so history pages don't precompute the entire graph.
 pub struct Batcher {
     walk: Option<CommitWalk>,
 }
@@ -30,7 +30,7 @@ impl Batcher {
         Ok(())
     }
 
-    // Pull the next page, dropping commits gitoxide cannot resolve.
+    // Pull the next page, dropping commits the object database cannot resolve.
     pub fn next(&mut self, count: usize) -> Vec<WalkCommit> {
         let mut page = Vec::with_capacity(count);
         self.next_into(count, &mut page);
