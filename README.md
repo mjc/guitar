@@ -1303,8 +1303,6 @@ Graph internals are documented separately in [GRAPH.MD](GRAPH.MD), including lan
 
 Planned or desired features include jujutsu integration, richer worktree management, richer in-app conflict resolution, and more.
 
-The staged gitoxide migration is tracked in Beads and starts with the tests-first boundary note in [docs/gitoxide-migration.md](docs/gitoxide-migration.md).
-
 Follow the project board for current work:
 
 [https://github.com/users/asinglebit/projects/1/views/1](https://github.com/users/asinglebit/projects/1/views/1)
