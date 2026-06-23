@@ -4,6 +4,7 @@ use crate::{
     git::queries::helpers::UncommittedChanges,
 };
 use git2::{Error, Repository};
+use gix::bstr::ByteSlice;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -26,7 +27,7 @@ fn open_repo(repo: &Repository) -> Result<gix::Repository, Error> {
 
 fn head_branch(repo: &gix::Repository) -> Option<String> {
     let head = repo.head_ref().ok().flatten()?;
-    head.name().to_string().strip_prefix("refs/heads/").map(str::to_string)
+    head.name().as_bstr().strip_prefix(b"refs/heads/")?.to_str().ok().map(str::to_string)
 }
 
 fn head_oid(repo: &gix::Repository) -> Option<gix::ObjectId> {

@@ -82,11 +82,14 @@ fn remote_exists(remotes: &[RemoteEntry], name: &str) -> bool {
 }
 
 fn repo_config_remote(repo: &gix::Repository, key: &str, remotes: &[RemoteEntry]) -> Option<String> {
-    repo.config_snapshot().string(key).and_then(|value| value.to_str().ok().map(|value| value.trim().to_string())).filter(|name| remote_exists(remotes, name))
+    let name = repo.config_snapshot().string(key)?;
+    let name = name.to_str().ok()?.trim();
+    remote_exists(remotes, name).then(|| name.to_string())
 }
 
 fn current_branch_upstream_remote(repo: &gix::Repository, remotes: &[RemoteEntry]) -> Option<String> {
-    let branch = repo.head_name().ok().flatten()?.shorten().to_str().ok()?.to_string();
+    let head_name = repo.head_name().ok().flatten()?;
+    let branch = head_name.shorten().to_str().ok()?;
     let key = format!("branch.{branch}.remote");
     repo_config_remote(repo, &key, remotes)
 }

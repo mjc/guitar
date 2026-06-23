@@ -478,11 +478,15 @@ fn file_history_rows(walk_ctx: &Walker, path: &str, symbols: &SymbolTheme) -> Re
 }
 
 fn short_oid(oid: Oid) -> String {
-    oid.to_string().chars().take(8).collect()
+    let mut oid = oid.to_string();
+    oid.truncate(8);
+    oid
 }
 
 fn graph_short_oid(oid: Oid) -> String {
-    oid.to_string().chars().take(9).collect()
+    let mut oid = oid.to_string();
+    oid.truncate(9);
+    oid
 }
 
 fn no_message(symbols: &SymbolTheme) -> String {
@@ -696,15 +700,10 @@ fn lookup(
 }
 
 fn branch_index(walk_ctx: &Walker, hidden_branch_names: &HashSet<String>, from: usize, direction: GraphBranchJumpDirection) -> Option<usize> {
-    let mut indices: Vec<usize> = pane_rows(GraphPane::Branches, walk_ctx)
-        .into_iter()
-        .filter_map(|row| match row {
-            GraphPaneRow::Branch { name, graph_index: Some(index), .. } if !hidden_branch_names.contains(&name) => Some(index),
-            _ => None,
-        })
-        .collect();
+    let visible_aliases =
+        walk_ctx.branches_local.iter().chain(&walk_ctx.branches_remote).filter(|(_, branches)| branches.iter().any(|name| !hidden_branch_names.contains(name))).map(|(&alias, _)| alias);
+    let mut indices: Vec<_> = alias_indices_for(walk_ctx, visible_aliases).into_values().collect();
     indices.sort_unstable();
-    indices.dedup();
 
     match direction {
         GraphBranchJumpDirection::Previous => indices.into_iter().rev().find(|&index| index < from),
