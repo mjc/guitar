@@ -106,17 +106,7 @@ impl App {
         let text_style = Style::default().fg(self.theme.COLOR_TEXT);
         let border_style = Style::default().fg(border);
         let input = if field == AuthInputField::Username { &mut self.auth_username_input } else { &mut self.auth_secret_input };
-        render_modal_text_input(
-            frame,
-            area,
-            input,
-            masked,
-            text_style,
-            border_style,
-            Some(Span::styled(format!(" {label} "), label_style)),
-            active,
-            &self.symbols,
-        );
+        render_modal_text_input(frame, area, input, masked, text_style, border_style, Some(Span::styled(format!(" {label} "), label_style)), active, &self.symbols);
     }
 
     fn draw_auth_text_modal(&mut self, frame: &mut Frame, lines: Vec<Line>, border_color: ratatui::style::Color) {

@@ -32,15 +32,7 @@ pub(crate) fn action_row(actions: &[(&str, &str)], style: Style) -> Line<'static
 }
 
 pub(crate) fn render_modal_text_input(
-    frame: &mut Frame,
-    area: Rect,
-    input: &mut TextInput,
-    masked: bool,
-    text_style: Style,
-    border_style: Style,
-    title: Option<Span<'static>>,
-    show_cursor: bool,
-    symbols: &SymbolTheme,
+    frame: &mut Frame, area: Rect, input: &mut TextInput, masked: bool, text_style: Style, border_style: Style, title: Option<Span<'static>>, show_cursor: bool, symbols: &SymbolTheme,
 ) {
     let visible_width = area.width.saturating_sub(1) as usize;
     input.set_max_width(visible_width);
