@@ -39,18 +39,11 @@ pub fn current_branch_names(repo: &Repository) -> HashSet<String> {
 }
 
 pub fn current_branch_names_from_repo(repo: &gix::Repository) -> HashSet<String> {
-    let mut names = HashSet::new();
     let Ok(references) = repo.references() else {
-        return names;
+        return HashSet::new();
     };
 
-    for reference in references.all().into_iter().flatten().flatten() {
-        if let Some(branch_name) = branch_name_from_ref(reference.name().as_bstr()) {
-            names.insert(branch_name.to_string());
-        }
-    }
-
-    names
+    references.all().into_iter().flatten().flatten().filter_map(|reference| branch_name_from_ref(reference.name().as_bstr()).map(str::to_string)).collect()
 }
 
 pub(crate) fn branch_name_from_ref(name: &[u8]) -> Option<&str> {

@@ -1,4 +1,7 @@
-use crate::{core::oids::git2_to_gix_oid, git::queries::helpers::FileStatus};
+use crate::{
+    core::oids::git2_to_gix_oid,
+    git::{gix::gix_error, queries::helpers::FileStatus},
+};
 use git2::{Oid, Repository};
 use std::{
     cell::RefCell,
@@ -41,7 +44,7 @@ fn open_repo(repo: &Repository) -> Result<gix::Repository, git2::Error> {
             return Ok(repo);
         }
 
-        let repo = gix::open(path).map_err(|error| git2::Error::from_str(&error.to_string()))?;
+        let repo = gix::open(path).map_err(gix_error)?;
         cache.borrow_mut().insert(path.to_path_buf(), repo.clone());
         Ok(repo)
     })
@@ -54,8 +57,8 @@ pub(crate) fn changed_file_status_at_commit_from_repo(repo: &gix::Repository, oi
     }
 
     let (tree_id, parent_tree_id) = commit_tree_ids(repo, oid)?;
-    let tree = repo.find_tree(tree_id).map_err(|error| git2::Error::from_str(&error.to_string()))?;
-    let parent_tree = parent_tree_id.map(|tree_id| repo.find_tree(tree_id).map_err(|error| git2::Error::from_str(&error.to_string()))).transpose()?;
+    let tree = repo.find_tree(tree_id).map_err(gix_error)?;
+    let parent_tree = parent_tree_id.map(|tree_id| repo.find_tree(tree_id).map_err(gix_error)).transpose()?;
 
     match status_from_path_lookup(repo, &tree, parent_tree.as_ref(), &path)? {
         PathLookupStatus::Changed(status) => return Ok(Some(status)),
@@ -66,7 +69,7 @@ pub(crate) fn changed_file_status_at_commit_from_repo(repo: &gix::Repository, oi
     let mut options = gix::diff::Options::default();
     options.track_path().track_rewrites(Some(gix::diff::Rewrites::default()));
 
-    let changes = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(options)).map_err(|error| git2::Error::from_str(&error.to_string()))?;
+    let changes = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(options)).map_err(gix_error)?;
 
     for change in changes.iter() {
         if let Some(status) = file_status_from_change(change, &path) {
@@ -82,16 +85,12 @@ fn commit_tree_ids(repo: &gix::Repository, oid: gix::ObjectId) -> Result<(gix::O
         return Ok(ids);
     }
 
-    let commit = repo.find_commit(oid).map_err(|error| git2::Error::from_str(&error.to_string()))?;
-    let tree_id = commit.tree_id().map_err(|error| git2::Error::from_str(&error.to_string()))?.detach();
+    let commit = repo.find_commit(oid).map_err(gix_error)?;
+    let tree_id = commit.tree_id().map_err(gix_error)?.detach();
     let parent_tree_id = commit
         .parent_ids()
         .next()
-        .map(|parent_oid| {
-            repo.find_commit(parent_oid.detach())
-                .map_err(|error| git2::Error::from_str(&error.to_string()))
-                .and_then(|parent| parent.tree_id().map(|id| id.detach()).map_err(|error| git2::Error::from_str(&error.to_string())))
-        })
+        .map(|parent_oid| repo.find_commit(parent_oid.detach()).map_err(gix_error).and_then(|parent| parent.tree_id().map(|id| id.detach()).map_err(gix_error)))
         .transpose()?;
 
     let ids = (tree_id, parent_tree_id);
@@ -131,7 +130,7 @@ fn tree_entry_identity(tree: &gix::Tree<'_>, path: &str) -> Result<Option<(gix::
         return Ok(tree.find_entry(filename.as_bytes()).map(|entry| (entry.object_id(), entry.mode())));
     }
 
-    Ok(tree.lookup_entry_by_path(selected).map_err(|error| git2::Error::from_str(&error.to_string()))?.map(|entry| (entry.object_id(), entry.mode())))
+    Ok(tree.lookup_entry_by_path(selected).map_err(gix_error)?.map(|entry| (entry.object_id(), entry.mode())))
 }
 
 fn exact_missing_path_status(
@@ -163,8 +162,7 @@ fn exact_new_path_status(
     };
 
     if let Some(source_path) = same_directory_exact_entry_path(parent_tree, selected_path, oid, mode)? {
-        let source_still_exists =
-            tree.lookup_entry_by_path(Path::new(&source_path)).map_err(|error| git2::Error::from_str(&error.to_string()))?.is_some_and(|entry| entry.oid() == oid && entry.mode() == mode);
+        let source_still_exists = tree.lookup_entry_by_path(Path::new(&source_path)).map_err(gix_error)?.is_some_and(|entry| entry.oid() == oid && entry.mode() == mode);
         return Ok(PathLookupStatus::Changed(if source_still_exists { FileStatus::Added } else { FileStatus::Renamed }));
     }
 
@@ -175,8 +173,8 @@ fn exact_new_path_status(
         return Ok(PathLookupStatus::Changed(FileStatus::Added));
     };
 
-    let source_path = Path::new(std::str::from_utf8(source_location.as_slice()).map_err(|error| git2::Error::from_str(&error.to_string()))?);
-    let source_still_exists = tree.lookup_entry_by_path(source_path).map_err(|error| git2::Error::from_str(&error.to_string()))?.is_some_and(|entry| entry.oid() == oid && entry.mode() == mode);
+    let source_path = Path::new(std::str::from_utf8(source_location.as_slice()).map_err(gix_error)?);
+    let source_still_exists = tree.lookup_entry_by_path(source_path).map_err(gix_error)?.is_some_and(|entry| entry.oid() == oid && entry.mode() == mode);
     Ok(PathLookupStatus::Changed(if source_still_exists { FileStatus::Added } else { FileStatus::Renamed }))
 }
 
@@ -192,9 +190,9 @@ fn same_directory_exact_entry_path(tree: &gix::Tree<'_>, selected_path: &str, oi
     let filename = filename.as_bytes();
 
     for entry in tree.iter() {
-        let entry = entry.map_err(|error| git2::Error::from_str(&error.to_string()))?;
+        let entry = entry.map_err(gix_error)?;
         if entry.filename() != filename && entry.oid() == oid && entry.mode() == mode {
-            let path = std::str::from_utf8(entry.filename()).map_err(|error| git2::Error::from_str(&error.to_string()))?;
+            let path = std::str::from_utf8(entry.filename()).map_err(gix_error)?;
             return Ok(Some(path.to_string()));
         }
     }
@@ -206,7 +204,7 @@ fn raw_tree_changes(repo: &gix::Repository, parent_tree: &gix::Tree<'_>, tree: &
     let mut options = gix::diff::Options::default();
     options.track_path();
 
-    repo.diff_tree_to_tree(Some(parent_tree), Some(tree), Some(options)).map_err(|error| git2::Error::from_str(&error.to_string())).map(|changes| changes.to_vec())
+    repo.diff_tree_to_tree(Some(parent_tree), Some(tree), Some(options)).map_err(gix_error).map(|changes| changes.to_vec())
 }
 
 fn file_status_from_change(change: &ChangeDetached, path: &str) -> Option<FileStatus> {

@@ -74,11 +74,7 @@ pub fn get_sorted_oids(batcher: &mut Batcher, oids: &mut Oids, sorted: &mut Vec<
 
 // Return the current branch name, or None when HEAD is detached.
 pub fn get_current_branch(repo: &Repository) -> Option<String> {
-    let head = repo.head().ok()?;
-    if !head.is_branch() {
-        return None;
-    }
-    head.shorthand().map(|s| s.to_string())
+    repo.head().ok().filter(|head| head.is_branch()).and_then(|head| head.shorthand().map(str::to_string))
 }
 
 pub fn get_git_user_info(repo: &Repository) -> Result<(Option<String>, Option<String>), git2::Error> {

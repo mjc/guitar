@@ -1,8 +1,11 @@
 use crate::{
     core::submodules::SubmoduleEntry,
-    git::queries::{
-        helpers::{ConflictFile, FileChange, FileStatus, Hunk, UncommittedChanges, deduplicate, diff_to_hunks, walk_tree},
-        submodules::list_submodules,
+    git::{
+        gix::gix_error,
+        queries::{
+            helpers::{ConflictFile, FileChange, FileStatus, Hunk, UncommittedChanges, deduplicate, diff_to_hunks, walk_tree},
+            submodules::list_submodules,
+        },
     },
     helpers::text::{decode, sanitize},
 };
@@ -153,10 +156,6 @@ fn is_submodule_status_path(path: &str, submodule_paths: &[PathBuf]) -> bool {
     let normalized = path.trim_end_matches('/');
     let path = Path::new(normalized);
     submodule_paths.iter().any(|submodule_path| path == submodule_path || path.starts_with(submodule_path))
-}
-
-fn gix_error(error: impl std::fmt::Display) -> Error {
-    Error::from_str(&error.to_string())
 }
 
 fn gix_path(path: &BStr) -> String {

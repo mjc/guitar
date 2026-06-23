@@ -5,7 +5,7 @@ use crate::{
         chunk::{Chunk, LaneRef, NONE},
         oids::Oids,
     },
-    git::gix::enable_history_object_cache,
+    git::gix::{enable_history_object_cache, gix_error},
     git::queries::commits::{get_sorted_oids, get_stashed_commits, get_tag_oids, get_tip_oids},
     git::queries::reflogs::{HeadReflogEntry, get_head_reflog_entries},
     helpers::heatmap::HeatmapCounts,
@@ -54,7 +54,7 @@ pub struct Walker {
 impl Walker {
     // Open the repository and seed all metadata that does not depend on walking commits.
     pub fn new(path: String, amount: usize, hidden_branch_names: HashSet<String>, include_head_reflog_roots: bool, graph_lane_limit: usize) -> Result<Self, git2::Error> {
-        let mut gix_repo = gix::open(path).map_err(|error| git2::Error::from_str(&error.to_string()))?;
+        let mut gix_repo = gix::open(path).map_err(gix_error)?;
         enable_history_object_cache(&mut gix_repo);
 
         let buffer = RefCell::new(Buffer::with_lane_limit(graph_lane_limit));
