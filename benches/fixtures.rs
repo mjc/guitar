@@ -16,6 +16,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const REPRESENTATIVE_CHECKPOINT_LANE_LIMIT: usize = 20;
+
 #[allow(dead_code)]
 pub struct TempFixture {
     root: tempfile::TempDir,
@@ -201,7 +203,12 @@ pub fn graph_fixture(cycles: usize) -> GraphFixture {
 
 #[allow(dead_code)]
 pub fn buffer_linear_fixture(commits: usize) -> BufferFixture {
-    let mut buffer = Buffer::default();
+    buffer_linear_fixture_with_lane_limit(commits, None)
+}
+
+#[allow(dead_code)]
+pub fn buffer_linear_fixture_with_lane_limit(commits: usize, lane_limit: Option<usize>) -> BufferFixture {
+    let mut buffer = lane_limit.map(Buffer::with_lane_limit).unwrap_or_default();
     let mut ops = Vec::with_capacity(commits);
     let mut parent = NONE;
 
@@ -266,7 +273,7 @@ pub fn buffer_merge_fixture(rounds: usize) -> BufferFixture {
 
 #[allow(dead_code)]
 pub fn buffer_checkpoint_fixture(commits: usize) -> BufferFixture {
-    buffer_linear_fixture(commits)
+    buffer_linear_fixture_with_lane_limit(commits, Some(REPRESENTATIVE_CHECKPOINT_LANE_LIMIT))
 }
 
 #[allow(dead_code)]
