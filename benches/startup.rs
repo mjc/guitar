@@ -13,7 +13,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tempfile::NamedTempFile;
 
 fn main() {
     divan::main();
@@ -205,29 +204,4 @@ fn walker_new_linked_worktree_startup_setup(bencher: Bencher) {
         .counter(ItemsCount::new(commits.saturating_add(linked_worktrees).saturating_add(dirty_files)))
         .with_inputs(|| startup_fixture(commits, linked_worktrees, dirty_files))
         .bench_local_values(|fixture| black_box(construct_walker_startup(&fixture.linked_path)));
-}
-
-#[divan::bench(sample_count = 50, sample_size = 10)]
-fn app_default_state(bencher: Bencher) {
-    bencher.bench_local(|| black_box(App::default()));
-}
-
-#[divan::bench(sample_count = 50, sample_size = 10)]
-fn load_branch_visibility_for_startup_repo(bencher: Bencher) {
-    let config = NamedTempFile::new().unwrap();
-    let config_path = config.path();
-    let repo_path = "/tmp/guitar/startup";
-    let hidden = ["main".to_string(), "origin/slow".to_string()].into_iter().collect();
-    guitar::helpers::branch_visibility::save_branch_visibility_to_path(config_path, repo_path, &hidden);
-
-    bencher.bench_local(|| black_box(guitar::helpers::branch_visibility::load_branch_visibility_from_path(config_path, repo_path)));
-}
-
-#[divan::bench(sample_count = 50, sample_size = 10)]
-fn load_symbol_theme_for_startup(bencher: Bencher) {
-    let config = NamedTempFile::new().unwrap();
-    let config_path = config.path();
-    guitar::helpers::symbols::save_symbol_theme_to_path(config_path, &guitar::helpers::symbols::SymbolTheme::ascii());
-
-    bencher.bench_local(|| black_box(guitar::helpers::symbols::load_symbol_theme_from_path(config_path)));
 }

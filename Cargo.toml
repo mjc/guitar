@@ -58,10 +58,6 @@ name = "commit_batching"
 harness = false
 
 [[bench]]
-name = "oid_aliases"
-harness = false
-
-[[bench]]
 name = "heatmap"
 harness = false
 
