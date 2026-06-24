@@ -118,7 +118,3 @@ pub fn parent_with_submodule(dir: &TestDir) -> (Repository, PathBuf) {
 
     (parent, child_path)
 }
-
-#[cfg(test)]
-#[path = "../tests/git/test_support.rs"]
-mod tests;

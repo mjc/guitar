@@ -40,3 +40,7 @@ pub fn fetch_remote(repo_path: &str, remote_name: &str, auth_session: AuthSessio
         network_result(network::FETCH(), &attempt, result)
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/git/actions/fetching.rs"]
+mod tests;
