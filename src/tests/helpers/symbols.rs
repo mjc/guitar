@@ -1,17 +1,12 @@
 use super::*;
-use std::{
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::path::PathBuf;
+
+#[path = "test_support.rs"]
+mod test_support;
+use test_support::{read_to_string, temp_json_path};
 
 fn temp_symbols_path(name: &str) -> PathBuf {
-    let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("guitar-symbols-{name}-{id}.json"))
-}
-
-fn read(path: &PathBuf) -> String {
-    fs::read_to_string(path).unwrap()
+    temp_json_path("guitar-symbols", name)
 }
 
 #[test]
@@ -53,44 +48,40 @@ fn ascii_theme_uses_ascii_for_every_symbol_value() {
 }
 
 #[test]
-fn missing_symbols_config_loads_main_and_rewrites_full_file() {
-    let path = temp_symbols_path("missing");
+fn missing_and_malformed_symbols_configs_load_main_and_rewrite_full_file() {
+    for (name, contents) in [("missing", None), ("malformed", Some("{ definitely not json"))] {
+        let path = temp_symbols_path(name);
+        if let Some(contents) = contents {
+            std::fs::write(&path, contents).unwrap();
+        }
 
-    let theme = load_symbol_theme_from_path(&path);
-    let contents = read(&path);
+        let theme = load_symbol_theme_from_path(&path);
+        let contents = read_to_string(&path);
 
-    assert_eq!(theme, SymbolTheme::main());
-    assert!(contents.contains('\n'), "{contents}");
-    assert!(contents.contains("\n  \"label\""), "{contents}");
-    assert!(contents.contains("\n    \"branch\""), "{contents}");
-    assert!(contents.contains("\"label\": \"main\""));
-    assert!(contents.contains("\"rounded_bottom_left\""));
-    assert!(contents.contains("\"branch_up_right\""));
-    assert!(contents.contains("\"horizontal_dotted\""));
-    assert!(contents.contains("\"symbols\""));
-}
-
-#[test]
-fn malformed_symbols_config_loads_main_and_rewrites_full_file() {
-    let path = temp_symbols_path("malformed");
-    fs::write(&path, "{ definitely not json").unwrap();
-
-    let theme = load_symbol_theme_from_path(&path);
-    let contents = read(&path);
-
-    assert_eq!(theme, SymbolTheme::main());
-    assert!(contents.contains("\"label\": \"main\""));
-    assert!(!contents.contains("definitely not json"));
+        assert_eq!(theme, SymbolTheme::main());
+        assert!(contents.contains("\"label\": \"main\""));
+        assert!(contents.contains("\"rounded_bottom_left\""));
+        assert!(contents.contains("\"branch_up_right\""));
+        assert!(contents.contains("\"horizontal_dotted\""));
+        assert!(contents.contains("\"symbols\""));
+        if name == "missing" {
+            assert!(contents.contains('\n'), "{contents}");
+            assert!(contents.contains("\n  \"label\""), "{contents}");
+            assert!(contents.contains("\n    \"branch\""), "{contents}");
+        } else {
+            assert!(!contents.contains("definitely not json"));
+        }
+    }
 }
 
 #[test]
 fn known_preset_config_loads_without_rewriting_full_file() {
     let path = temp_symbols_path("preset");
     save_symbol_theme_to_path(&path, &SymbolTheme::ascii());
-    let original = read(&path);
+    let original = read_to_string(&path);
 
     let theme = load_symbol_theme_from_path(&path);
-    let contents = read(&path);
+    let contents = read_to_string(&path);
 
     assert_eq!(theme, SymbolTheme::ascii());
     assert_eq!(contents, original);
@@ -109,10 +100,10 @@ fn partial_overrides_preserve_unspecified_preset_values_without_rewriting() {
     }
   }
 }"#;
-    fs::write(&path, original).unwrap();
+    std::fs::write(&path, original).unwrap();
 
     let theme = load_symbol_theme_from_path(&path);
-    let contents = read(&path);
+    let contents = read_to_string(&path);
 
     assert_eq!(theme.name, SymbolThemeName::Custom);
     assert_eq!(theme.label(), "ascii");

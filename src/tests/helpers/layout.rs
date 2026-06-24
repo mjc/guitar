@@ -1,13 +1,12 @@
 use super::*;
-use std::{
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::path::PathBuf;
+
+#[path = "test_support.rs"]
+mod test_support;
+use test_support::{read_to_string, temp_json_path};
 
 fn temp_layout_path(name: &str) -> PathBuf {
-    let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("guitar-layout-{name}-{id}")).join("layout.json")
+    temp_json_path("guitar-layout", name)
 }
 
 #[test]
@@ -39,7 +38,7 @@ fn save_layout_config_writes_pretty_json_and_round_trips() {
 
     save_layout_config_to_path(&path, &config);
 
-    let contents = fs::read_to_string(&path).unwrap();
+    let contents = read_to_string(&path);
     assert!(contents.contains('\n'), "{contents}");
     assert!(contents.contains("\n  \"is_shas\""), "{contents}");
     assert!(contents.contains("\n  \"width_left_pane\""), "{contents}");
