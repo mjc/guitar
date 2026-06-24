@@ -261,3 +261,18 @@ fn delta_ops_stay_compact_for_large_histories() {
 fn delta_spans_stay_packed_for_large_histories() {
     assert_eq!(size_of::<DeltaSpan>(), 8);
 }
+
+#[test]
+fn transient_lane_expiration_reuses_scratch_storage() {
+    let mut buffer = Buffer::default();
+
+    for lane in 0..16 {
+        buffer.expire_lane_after_snapshot(lane);
+    }
+    let capacity = buffer.transient_lanes.capacity();
+
+    buffer.update(Chunk::commit(1, NONE, NONE));
+
+    assert!(buffer.transient_lanes.is_empty());
+    assert_eq!(buffer.transient_lanes.capacity(), capacity);
+}

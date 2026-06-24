@@ -264,8 +264,7 @@ impl Buffer {
     pub fn update(&mut self, chunk: Chunk) -> UpdateOutcome {
         self.backup();
 
-        let transient_lanes = std::mem::take(&mut self.transient_lanes);
-        for lane_idx in transient_lanes {
+        for lane_idx in self.transient_lanes.drain(..) {
             if lane_idx < self.curr.len() && !self.curr[lane_idx].is_dummy() {
                 self.curr[lane_idx] = Chunk::dummy();
                 self.delta.ops.push(DeltaOp::Replace { index: delta_index(lane_idx), new: self.curr[lane_idx] });
