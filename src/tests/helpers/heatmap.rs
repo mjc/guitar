@@ -30,76 +30,65 @@ fn commit_at(repo: &Repository, path: &Path, name: &str, seconds: i64) -> Oid {
     repo.commit(Some("HEAD"), &sig, &sig, name, &tree, &parents).unwrap()
 }
 
-#[test]
-fn commits_per_day_counts_rendered_dates_without_allocating_a_map() {
-    let (path, repo) = temp_repo("counts");
-    let today = Utc::now().timestamp();
-    let outside_grid = today - ((TOTAL_DAYS as i64) + 10) * 24 * 60 * 60;
-    let first = commit_at(&repo, &path, "first.txt", today);
-    let second = commit_at(&repo, &path, "second.txt", today);
-    let old = commit_at(&repo, &path, "old.txt", outside_grid);
+struct HeatmapFixture {
+    path: PathBuf,
+    today: i64,
+    yesterday: i64,
+    outside_grid: i64,
+    first_today: Oid,
+    second_today: Oid,
+    yesterday_oid: Oid,
+    old: Oid,
+}
 
-    let gix_repo = gix::open(&path).unwrap();
-    let counts = commits_per_day(&gix_repo, [first, second, old].map(gix_oid));
+fn heatmap_fixture(name: &str) -> HeatmapFixture {
+    let (path, repo) = temp_repo(name);
+    let today = Utc::now().timestamp();
+    let yesterday = today - 24 * 60 * 60;
+    let outside_grid = today - ((TOTAL_DAYS as i64) + 10) * 24 * 60 * 60;
+
+    HeatmapFixture {
+        first_today: commit_at(&repo, &path, "first-today.txt", today),
+        second_today: commit_at(&repo, &path, "second-today.txt", today),
+        yesterday_oid: commit_at(&repo, &path, "yesterday.txt", yesterday),
+        old: commit_at(&repo, &path, "old.txt", outside_grid),
+        path,
+        today,
+        yesterday,
+        outside_grid,
+    }
+}
+
+#[test]
+fn repo_heatmap_counts_recent_commits_and_stops_at_old_boundary() {
+    let fixture = heatmap_fixture("repo");
+    let gix_repo = gix::open(&fixture.path).unwrap();
+    let weekday_today = Utc::now().weekday().num_days_from_monday() as usize;
+    let counts = commits_per_day(&gix_repo, [fixture.first_today, fixture.second_today, fixture.old].map(gix_oid));
+    let stopped = commits_per_day(&gix_repo, [fixture.first_today, fixture.old, fixture.second_today].map(gix_oid));
+    let grid = build_heatmap(&gix_repo, [gix_oid(fixture.first_today)]);
 
     assert_eq!(counts[0], 2);
     assert_eq!(counts.iter().sum::<usize>(), 2);
-}
-
-#[test]
-fn commits_per_day_stops_after_first_commit_older_than_rendered_grid() {
-    let (path, repo) = temp_repo("ordered");
-    let today = Utc::now().timestamp();
-    let outside_grid = today - ((TOTAL_DAYS as i64) + 10) * 24 * 60 * 60;
-    let recent = commit_at(&repo, &path, "recent.txt", today);
-    let old = commit_at(&repo, &path, "old.txt", outside_grid);
-    let would_count_if_scanned = commit_at(&repo, &path, "newer-after-old.txt", today);
-
-    let gix_repo = gix::open(&path).unwrap();
-    let counts = commits_per_day(&gix_repo, [recent, old, would_count_if_scanned].map(gix_oid));
-
-    assert_eq!(counts[0], 1);
-    assert_eq!(counts.iter().sum::<usize>(), 1);
-}
-
-#[test]
-fn build_heatmap_places_today_in_the_newest_week() {
-    let (path, repo) = temp_repo("grid");
-    let oid = commit_at(&repo, &path, "today.txt", Utc::now().timestamp());
-    let gix_repo = gix::open(&path).unwrap();
-    let grid = build_heatmap(&gix_repo, [gix_oid(oid)]);
-    let weekday_today = Utc::now().weekday().num_days_from_monday() as usize;
-
+    assert_eq!(stopped[0], 1);
+    assert_eq!(stopped.iter().sum::<usize>(), 1);
     assert_eq!(grid[weekday_today][WEEKS - 1], 1);
 }
 
 #[test]
-fn streamed_heatmap_counts_match_commit_scan_for_recent_commits() {
-    let (path, repo) = temp_repo("streamed-counts");
-    let today = Utc::now().timestamp();
-    let yesterday = today - 24 * 60 * 60;
-    let first = commit_at(&repo, &path, "today.txt", today);
-    let second = commit_at(&repo, &path, "yesterday.txt", yesterday);
-
-    let gix_repo = gix::open(&path).unwrap();
-    let scanned = build_heatmap(&gix_repo, [first, second].map(gix_oid));
+fn streamed_heatmap_matches_scanned_counts_and_filters_out_of_grid_dates() {
+    let fixture = heatmap_fixture("streamed-counts");
+    let gix_repo = gix::open(&fixture.path).unwrap();
+    let scanned = build_heatmap(&gix_repo, [fixture.first_today, fixture.yesterday_oid].map(gix_oid));
     let mut streamed = HeatmapCounts::default();
-    streamed.add_commit_seconds(today);
-    streamed.add_commit_seconds(yesterday);
+    streamed.add_commit_seconds(fixture.today);
+    streamed.add_commit_seconds(fixture.yesterday);
+
+    let mut filtered = HeatmapCounts::default();
+    filtered.add_commit_seconds(fixture.today);
+    filtered.add_commit_seconds(fixture.outside_grid);
+    filtered.add_commit_seconds(fixture.today + 24 * 60 * 60);
 
     assert_eq!(streamed.build(), scanned);
-}
-
-#[test]
-fn streamed_heatmap_counts_ignore_commits_outside_rendered_grid() {
-    let mut streamed = HeatmapCounts::default();
-    let now = Utc::now().timestamp();
-    streamed.add_commit_seconds(now);
-    streamed.add_commit_seconds(now - ((TOTAL_DAYS as i64) + 10) * 24 * 60 * 60);
-    streamed.add_commit_seconds(now + 24 * 60 * 60);
-
-    let grid = streamed.build();
-    let total = grid.iter().flatten().sum::<usize>();
-
-    assert_eq!(total, 1);
+    assert_eq!(filtered.build().iter().flatten().sum::<usize>(), 1);
 }
