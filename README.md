@@ -42,7 +42,6 @@ made with ♡
 - [Persistence](#persistence)
 - [Configuration Files](#configuration-files)
 - [Development](#development)
-- [Graph Internals](GRAPH.MD)
 - [Known Limitations](#known-limitations)
 - [Roadmap](#roadmap)
 - [Screenshots](#screenshots)
@@ -55,28 +54,15 @@ Use it carefully on important repositories. Keep backups, understand what the se
 
 ## Demo
 
-<table>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="https://www.youtube.com/watch?v=0oyqviuKFXI">
-        <img width="1280" height="720" alt="2" src="https://github.com/user-attachments/assets/4774e307-3a3e-41d7-b7fb-b5426b23ba49" />
-      </a>
-    </td>
-    <td width="67%" valign="top">
-      the complete rundown of features of the `v1.0.0`
-  </tr>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="https://www.youtube.com/watch?v=oERA8MYlHjQ">
-        <img width="1280" height="720" alt="2" src="https://github.com/user-attachments/assets/cae29680-11f0-4a76-bdeb-328a248f198a" />
-      </a>
-    </td>
-    <td width="67%" valign="top">
-      Older recording of the `v0.1.12` feature set and some technical breakdown of the core walker. The recording is still useful as a tour.
-  </tr>
-</table>
+the complete rundown of features of the `v1.0.0`:
 
-This README and the in-app settings/help view are the current source of truth for shortcuts and behavior.
+[https://m.youtube.com/watch?v=0oyqviuKFXI](https://m.youtube.com/watch?v=0oyqviuKFXI)
+
+Older recording of the `v0.1.12` feature set and some technical breakdown of the core walker:
+
+[https://www.youtube.com/watch?v=oERA8MYlHjQ](https://www.youtube.com/watch?v=oERA8MYlHjQ)
+
+The recording is still useful as a tour. This README and the in-app settings/help view are the current source of truth for shortcuts and behavior.
 
 ## Requirements
 
@@ -1280,8 +1266,6 @@ Important source areas:
 - `src/git/queries/`: repository reads, diffs, commits, reflogs, worktrees, submodules.
 - `src/git/auth.rs`: network credential classification, prompting, and session cache.
 - `src/helpers/`: keymaps, layout persistence, themes, recent repos, symbols, text, colors.
-
-Graph internals are documented separately in [GRAPH.MD](GRAPH.MD), including lane snapshots, compressed lanes, walker/buffer behavior, and renderer alignment.
 
 ## Known Limitations
 
