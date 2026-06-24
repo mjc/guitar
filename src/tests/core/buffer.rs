@@ -2,6 +2,21 @@ use super::*;
 use crate::core::chunk::{Chunk, NONE};
 use std::mem::size_of;
 
+fn linear_history_buffer(total: u32) -> Buffer {
+    let mut buffer = Buffer::default();
+    for alias in 1..=total {
+        buffer.update(Chunk::commit(alias, alias - 1, NONE));
+    }
+    buffer.backup();
+    buffer
+}
+
+fn capped_buffer(limit: usize, aliases: std::ops::RangeInclusive<u32>) -> (Buffer, Vec<UpdateOutcome>) {
+    let mut buffer = Buffer::with_lane_limit(limit);
+    let outcomes = aliases.map(|alias| buffer.update(Chunk::commit(alias, 100 + alias, NONE))).collect();
+    (buffer, outcomes)
+}
+
 #[test]
 fn window_rebuilds_visible_range_from_delta_history() {
     let mut buffer = Buffer::default();
@@ -98,18 +113,18 @@ fn update_records_only_changed_parent_lanes() {
 }
 
 #[test]
-fn capped_buffer_never_returns_snapshots_wider_than_lane_limit() {
-    let mut buffer = Buffer::with_lane_limit(5);
+fn capped_buffer_bounds_history_and_records_overflow_delta() {
+    let (mut buffer, outcomes) = capped_buffer(5, 1..=7);
 
-    for alias in 1..=7 {
-        let update = buffer.update(Chunk::commit(alias, 100 + alias, NONE));
-        if alias > 5 {
-            assert_eq!(update.lane.index, 4);
-            assert!(update.lane.is_flattened);
-        }
+    for update in &outcomes[5..] {
+        assert_eq!(update.lane.index, 4);
+        assert!(update.lane.is_flattened);
     }
-    buffer.backup();
+    assert!(buffer.delta.ops.iter().any(|op| matches!(op, DeltaOp::Truncate { len: 5 } | DeltaOp::ReplaceAndTruncate { len: 5, .. })));
+    assert!(!buffer.delta.ops.iter().any(|op| matches!(op, DeltaOp::Remove { index } if *index >= 5)));
+    assert_eq!(buffer.delta.ops.iter().count(), 2);
 
+    buffer.backup();
     let history = buffer.window(1, buffer.deltas.len());
 
     assert!(history.rows().iter().all(|snapshot| snapshot.len() <= 5));
@@ -117,25 +132,6 @@ fn capped_buffer_never_returns_snapshots_wider_than_lane_limit() {
     assert_eq!(latest.len(), 5);
     assert_eq!(latest[4].alias, 7);
     assert!(latest[4].is_flattened);
-}
-
-#[test]
-fn capped_buffer_records_overflow_as_single_truncate_delta() {
-    let mut buffer = Buffer::with_lane_limit(3);
-
-    for alias in 1..=5 {
-        buffer.update(Chunk::commit(alias, 100 + alias, NONE));
-    }
-
-    assert!(buffer.delta.ops.iter().any(|op| matches!(op, DeltaOp::Truncate { len: 3 } | DeltaOp::ReplaceAndTruncate { len: 3, .. })));
-    assert!(!buffer.delta.ops.iter().any(|op| matches!(op, DeltaOp::Remove { index } if *index >= 3)));
-    assert_eq!(buffer.delta.ops.iter().count(), 2);
-
-    buffer.backup();
-    let history = buffer.window(1, buffer.deltas.len());
-
-    assert!(history.rows().iter().all(|snapshot| snapshot.len() <= 3));
-    assert_eq!(history.last().unwrap().len(), 3);
 }
 
 #[test]
@@ -177,11 +173,7 @@ fn common_many_op_delta_stays_inline() {
 
 #[test]
 fn capped_buffer_keeps_normal_last_lane_palette_eligible_without_overflow() {
-    let mut buffer = Buffer::with_lane_limit(5);
-
-    for alias in 1..=5 {
-        buffer.update(Chunk::commit(alias, 100 + alias, NONE));
-    }
+    let (buffer, _) = capped_buffer(5, 1..=5);
 
     assert_eq!(buffer.curr.len(), 5);
     assert_eq!(buffer.curr[4].alias, 5);
@@ -207,35 +199,19 @@ fn shrink_to_fit_releases_overreserved_delta_capacity() {
 }
 
 #[test]
-fn window_replays_late_range_from_nearest_checkpoint() {
-    let mut buffer = Buffer::default();
-
-    for alias in 1..=16_500 {
-        buffer.update(Chunk::commit(alias, alias - 1, NONE));
-    }
-    buffer.backup();
+fn long_history_keeps_sparse_checkpoints_and_replays_late_window() {
+    let buffer = linear_history_buffer(16_500);
 
     let start = 16_001;
     let full = buffer.window(1, buffer.deltas.len());
     let history = buffer.window(start, buffer.deltas.len());
     let expected = GraphHistory::from_rows(full.rows().iter().skip(start - 1).cloned());
 
-    assert_eq!(history.len(), 500);
-    assert_eq!(history, expected);
-}
-
-#[test]
-fn checkpoint_storage_stays_sparse_for_long_histories() {
-    let mut buffer = Buffer::default();
-
-    for alias in 1..=16_500 {
-        buffer.update(Chunk::commit(alias, alias - 1, NONE));
-    }
-    buffer.backup();
-
     assert_eq!(buffer.checkpoints.len(), 2);
     assert_eq!(buffer.checkpoints[0].idx, 0);
     assert_eq!(buffer.checkpoints[1].idx, 16_384);
+    assert_eq!(history.len(), 500);
+    assert_eq!(history, expected);
 }
 
 #[test]
