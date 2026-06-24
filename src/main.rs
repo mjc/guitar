@@ -1,6 +1,6 @@
 use std::{env, fs, io, path::PathBuf};
 
-use guitar::{App, VERSION};
+use guitar::{App, VERSION, helpers::symbols::load_symbol_theme};
 
 const RESET_CONFIG: &str = "--reset";
 const EXIT_WHEN_GRAPH_COMPLETE: &str = "--exit-when-graph-complete";
@@ -52,12 +52,11 @@ fn main() -> io::Result<()> {
     }
 
     if exit_when_graph_complete {
-        let mut app = App::default();
+        let mut app = App::with_symbol_theme(load_symbol_theme());
         app.load_language_config();
         app.load_recent();
         app.load_layout();
         app.load_theme_config();
-        app.load_symbol_theme_config();
         app.load_keymap();
         app.reload(repo_arg);
         let result = app.wait_until_graph_complete(std::time::Duration::from_secs(300));
@@ -67,7 +66,7 @@ fn main() -> io::Result<()> {
     }
 
     let mut terminal = ratatui::init();
-    let app_result = App::default().run(&mut terminal);
+    let app_result = App::with_symbol_theme(load_symbol_theme()).run(&mut terminal);
     ratatui::restore();
     app_result
 }

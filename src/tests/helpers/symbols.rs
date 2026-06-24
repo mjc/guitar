@@ -84,33 +84,32 @@ fn malformed_symbols_config_loads_main_and_rewrites_full_file() {
 }
 
 #[test]
-fn known_preset_config_loads_and_rewrites_full_file() {
+fn known_preset_config_loads_without_rewriting_full_file() {
     let path = temp_symbols_path("preset");
     save_symbol_theme_to_path(&path, &SymbolTheme::ascii());
+    let original = read(&path);
 
     let theme = load_symbol_theme_from_path(&path);
     let contents = read(&path);
 
     assert_eq!(theme, SymbolTheme::ascii());
+    assert_eq!(contents, original);
     assert!(contents.contains("\"label\": \"ascii\""));
     assert!(contents.contains("\"renamed_arrow_spaced\": \"> \""));
 }
 
 #[test]
-fn partial_overrides_preserve_unspecified_preset_values_and_become_custom() {
+fn partial_overrides_preserve_unspecified_preset_values_without_rewriting() {
     let path = temp_symbols_path("partial");
-    fs::write(
-        &path,
-        r#"{
+    let original = r#"{
   "label": "ascii",
   "symbols": {
     "branch": {
       "local_visible": "@"
     }
   }
-}"#,
-    )
-    .unwrap();
+}"#;
+    fs::write(&path, original).unwrap();
 
     let theme = load_symbol_theme_from_path(&path);
     let contents = read(&path);
@@ -121,8 +120,7 @@ fn partial_overrides_preserve_unspecified_preset_values_and_become_custom() {
     assert_eq!(theme.branch.local_hidden, "o");
     assert_eq!(theme.border.horizontal, "-");
     assert_eq!(theme.graph.horizontal_dotted, ".");
-    assert!(contents.contains("\"local_hidden\": \"o\""));
-    assert!(contents.contains("\"horizontal_dotted\": \".\""));
+    assert_eq!(contents, original);
 }
 
 #[test]

@@ -558,6 +558,7 @@ pub struct App {
     pub last_input_direction: Option<Direction>,
     pub theme: Theme,
     pub symbols: SymbolTheme,
+    pub symbol_theme_loaded: bool,
     pub language: Language,
     pub heatmap: [[usize; WEEKS]; DAYS],
     pub remotes: Vec<crate::git::queries::remotes::RemoteEntry>,
@@ -801,7 +802,9 @@ impl App {
             self.load_recent();
             self.load_layout();
             self.load_theme_config();
-            self.load_symbol_theme_config();
+            if !self.symbol_theme_loaded {
+                self.load_symbol_theme_config();
+            }
             self.load_keymap();
             self.reload(None);
 
@@ -1651,6 +1654,7 @@ impl App {
 
     pub fn set_symbol_theme(&mut self, symbols: SymbolTheme) {
         self.symbols = symbols;
+        self.symbol_theme_loaded = true;
         self.refresh_theme_assets();
     }
 
