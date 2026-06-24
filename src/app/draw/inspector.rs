@@ -45,7 +45,9 @@ impl App {
             // Commit metadata is read lazily for the selected graph row.
             if let Some(identity) = self.graph_identity_at(self.graph_selected) {
                 let alias = identity.alias;
-                let oid = identity.oid;
+                let Some(oid) = self.graph_oid_for_identity(identity) else {
+                    return;
+                };
                 let commit = repo.find_commit(oid).unwrap();
                 let author = commit.author();
                 let committer = commit.committer();

@@ -175,7 +175,10 @@ impl App {
             let Some(identity) = self.graph_identity_at(self.graph_selected) else {
                 return;
             };
-            self.current_diff = get_filenames_diff_at_oid(&repo, identity.oid);
+            let Some(oid) = self.graph_oid_for_identity(identity) else {
+                return;
+            };
+            self.current_diff = get_filenames_diff_at_oid(&repo, oid);
             self.current_diff_identity = Some(identity);
         }
     }

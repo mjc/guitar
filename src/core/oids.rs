@@ -1,11 +1,7 @@
 use crate::core::chunk::NONE;
 use git2::Oid;
 use gix::ObjectId;
-use rustc_hash::FxHashMap;
-use std::collections::hash_map::Entry;
-
-type OidFingerprint = u32;
-const OID_CHUNK_SIZE: usize = 32_768;
+use iddqd::{BiHashItem, BiHashMap, bi_upcast};
 
 pub trait IntoGixOid {
     fn into_gix_oid(self) -> ObjectId;
@@ -39,274 +35,81 @@ pub fn gix_to_git2_oid(oid: gix::ObjectId) -> Oid {
 #[derive(Clone)]
 pub struct Oids {
     pub zero: ObjectId,
-    pub oids: OidStore,
-    aliases: AliasIndex,
-    alias_collisions: FxHashMap<OidFingerprint, CollisionBucket>,
+    records: BiHashMap<OidRecord>,
+    next_alias: u32,
     pub sorted_aliases: Vec<u32>,
     pub stashes: Vec<u32>,
 }
 
-#[derive(Clone, Default)]
-pub struct OidStore {
-    chunks: Vec<Vec<ObjectId>>,
-    len: usize,
+#[derive(Clone, Debug)]
+struct OidRecord {
+    alias: u32,
+    oid: ObjectId,
 }
 
-impl OidStore {
-    pub fn len(&self) -> usize {
-        self.len
+impl BiHashItem for OidRecord {
+    type K1<'a> = u32;
+    type K2<'a> = &'a ObjectId;
+
+    fn key1(&self) -> Self::K1<'_> {
+        self.alias
     }
 
-    fn capacity(&self) -> usize {
-        self.chunks.iter().map(Vec::capacity).sum()
+    fn key2(&self) -> Self::K2<'_> {
+        &self.oid
     }
 
-    fn reserve(&mut self, additional: usize) {
-        let needed = self.len.saturating_add(additional);
-        let needed_chunks = needed.div_ceil(OID_CHUNK_SIZE);
-        if needed_chunks > self.chunks.capacity() {
-            self.chunks.reserve(needed_chunks - self.chunks.capacity());
-        }
-
-        if additional == 0 {
-            return;
-        }
-
-        match self.chunks.last_mut() {
-            Some(chunk) => {
-                let chunk_target = chunk.len().saturating_add(additional).min(OID_CHUNK_SIZE);
-                let chunk_spare = chunk.capacity().saturating_sub(chunk.len());
-                if chunk_target > chunk.len() + chunk_spare {
-                    chunk.reserve(chunk_target - chunk.len() - chunk_spare);
-                }
-            },
-            None => self.chunks.push(Vec::with_capacity(additional.min(OID_CHUNK_SIZE))),
-        }
-    }
-
-    fn push(&mut self, oid: ObjectId) {
-        if self.chunks.last().is_none_or(|chunk| chunk.len() == OID_CHUNK_SIZE) {
-            self.chunks.push(Vec::with_capacity(OID_CHUNK_SIZE));
-        }
-        self.chunks.last_mut().expect("oid store has a writable chunk").push(oid);
-        self.len += 1;
-    }
-
-    fn get(&self, idx: usize) -> Option<&ObjectId> {
-        if idx >= self.len {
-            return None;
-        }
-        let chunk = idx / OID_CHUNK_SIZE;
-        let offset = idx % OID_CHUNK_SIZE;
-        self.chunks.get(chunk).and_then(|chunk| chunk.get(offset))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &ObjectId> {
-        self.chunks.iter().flat_map(|chunk| chunk.iter())
-    }
-
-    fn shrink_to_fit(&mut self) {
-        for chunk in &mut self.chunks {
-            chunk.shrink_to_fit();
-        }
-        self.chunks.shrink_to_fit();
-    }
-}
-
-#[derive(Clone)]
-enum AliasIndex {
-    Hash(FxHashMap<OidFingerprint, u32>),
-    Flat(Vec<(OidFingerprint, u32)>),
-}
-
-impl Default for AliasIndex {
-    fn default() -> Self {
-        Self::Hash(FxHashMap::default())
-    }
-}
-
-impl AliasIndex {
-    fn get(&self, fingerprint: OidFingerprint) -> Option<u32> {
-        match self {
-            AliasIndex::Hash(aliases) => aliases.get(&fingerprint).copied(),
-            AliasIndex::Flat(aliases) => aliases.binary_search_by_key(&fingerprint, |(fingerprint, _)| *fingerprint).ok().map(|idx| aliases[idx].1),
-        }
-    }
-
-    fn shrink_to_fit(&mut self) {
-        match self {
-            AliasIndex::Hash(aliases) => aliases.shrink_to_fit(),
-            AliasIndex::Flat(aliases) => aliases.shrink_to_fit(),
-        }
-    }
-
-    fn compact(&mut self) {
-        if let AliasIndex::Hash(aliases) = self {
-            let mut flat: Vec<_> = aliases.iter().map(|(&fingerprint, &alias)| (fingerprint, alias)).collect();
-            flat.sort_unstable_by_key(|(fingerprint, _)| *fingerprint);
-            *self = AliasIndex::Flat(flat);
-        }
-    }
-
-    fn ensure_hash(&mut self) -> &mut FxHashMap<OidFingerprint, u32> {
-        if let AliasIndex::Flat(flat) = self {
-            let aliases: FxHashMap<OidFingerprint, u32> = flat.iter().copied().collect();
-            *self = AliasIndex::Hash(aliases);
-        }
-
-        let AliasIndex::Hash(aliases) = self else {
-            unreachable!("alias index is materialized as a hash map");
-        };
-        aliases
-    }
-}
-
-#[derive(Clone)]
-enum CollisionBucket {
-    Few(Vec<u32>),
-    Many(FxHashMap<ObjectId, u32>),
-}
-
-impl CollisionBucket {
-    fn find(&self, oids: &OidStore, oid: ObjectId) -> Option<u32> {
-        match self {
-            CollisionBucket::Few(aliases) => aliases.iter().copied().find(|alias| oids.get(*alias as usize).is_some_and(|current| *current == oid)),
-            CollisionBucket::Many(aliases) => aliases.get(&oid).copied(),
-        }
-    }
-
-    fn push(&mut self, oids: &OidStore, oid: ObjectId, alias: u32) {
-        match self {
-            CollisionBucket::Few(aliases) if aliases.len() < 8 => aliases.push(alias),
-            CollisionBucket::Few(aliases) => {
-                let mut exact = FxHashMap::default();
-                for existing in aliases.iter().copied() {
-                    if let Some(existing_oid) = oids.get(existing as usize) {
-                        exact.insert(*existing_oid, existing);
-                    }
-                }
-                exact.insert(oid, alias);
-                *self = CollisionBucket::Many(exact);
-            },
-            CollisionBucket::Many(aliases) => {
-                aliases.insert(oid, alias);
-            },
-        }
-    }
-
-    fn shrink_to_fit(&mut self) {
-        match self {
-            CollisionBucket::Few(aliases) => aliases.shrink_to_fit(),
-            CollisionBucket::Many(aliases) => aliases.shrink_to_fit(),
-        }
-    }
+    bi_upcast!();
 }
 
 impl Default for Oids {
     fn default() -> Self {
-        Oids {
-            zero: ObjectId::null(gix::hash::Kind::Sha1),
-            oids: OidStore::default(),
-            aliases: AliasIndex::default(),
-            alias_collisions: FxHashMap::default(),
-            sorted_aliases: vec![NONE],
-            stashes: vec![],
-        }
+        Oids { zero: ObjectId::null(gix::hash::Kind::Sha1), records: BiHashMap::default(), next_alias: 0, sorted_aliases: vec![NONE], stashes: vec![] }
     }
 }
 
 impl Oids {
     pub fn reserve_total_aliases(&mut self, total: usize) {
-        let oid_spare = self.oids.capacity().saturating_sub(self.oids.len());
-        if total > self.oids.len() + oid_spare {
-            self.oids.reserve(total - self.oids.len() - oid_spare);
-        }
-
         let sorted_target = total.saturating_add(1);
         let sorted_spare = self.sorted_aliases.capacity().saturating_sub(self.sorted_aliases.len());
         if sorted_target > self.sorted_aliases.len() + sorted_spare {
             self.sorted_aliases.reserve(sorted_target - self.sorted_aliases.len() - sorted_spare);
         }
-
-        let aliases = self.aliases.ensure_hash();
-        let alias_spare = aliases.capacity().saturating_sub(aliases.len());
-        if total > aliases.len() + alias_spare {
-            aliases.reserve(total - aliases.len() - alias_spare);
-        }
     }
 
     pub fn reserve_aliases(&mut self, additional: usize) {
-        let oid_spare = self.oids.capacity().saturating_sub(self.oids.len());
-        if additional > oid_spare {
-            self.oids.reserve(additional - oid_spare);
-        }
-
         let sorted_spare = self.sorted_aliases.capacity().saturating_sub(self.sorted_aliases.len());
         if additional > sorted_spare {
             self.sorted_aliases.reserve(additional - sorted_spare);
         }
-
-        let aliases = self.aliases.ensure_hash();
-        let alias_spare = aliases.capacity().saturating_sub(aliases.len());
-        if additional > alias_spare {
-            aliases.reserve(additional - alias_spare);
-        }
     }
 
     pub fn compact_alias_index(&mut self) {
-        self.aliases.compact();
+        self.records.shrink_to_fit();
     }
 
     pub fn shrink_to_fit(&mut self) {
-        self.oids.shrink_to_fit();
-        self.aliases.shrink_to_fit();
-        self.alias_collisions.shrink_to_fit();
-        for bucket in self.alias_collisions.values_mut() {
-            bucket.shrink_to_fit();
-        }
+        self.records.shrink_to_fit();
         self.sorted_aliases.shrink_to_fit();
         self.stashes.shrink_to_fit();
     }
 
     pub fn get_alias_by_oid(&mut self, oid: impl IntoGixOid) -> u32 {
         let oid = oid.into_gix_oid();
-        // Assign aliases lazily so refs, commits, tags, and stashes share one namespace.
-        let fingerprint = oid_fingerprint(oid);
-        if let Some(alias) = self.aliases.get(fingerprint) {
-            if self.oids.get(alias as usize).is_some_and(|current| *current == oid) {
-                return alias;
-            }
-            if let Some(alias) = self.alias_collisions.get(&fingerprint).and_then(|bucket| bucket.find(&self.oids, oid)) {
-                return alias;
-            }
+        if let Some(record) = self.records.get2(&oid) {
+            return record.alias;
         }
 
-        let alias = self.oids.len() as u32;
-        self.oids.push(oid);
-
-        match self.aliases.ensure_hash().entry(fingerprint) {
-            Entry::Occupied(_) => match self.alias_collisions.entry(fingerprint) {
-                Entry::Occupied(mut entry) => entry.get_mut().push(&self.oids, oid, alias),
-                Entry::Vacant(entry) => {
-                    entry.insert(CollisionBucket::Few(vec![alias]));
-                },
-            },
-            Entry::Vacant(entry) => {
-                entry.insert(alias);
-            },
-        }
+        let alias = self.next_alias;
+        self.next_alias = self.next_alias.checked_add(1).expect("OID alias space exhausted");
+        self.records.insert_unique(OidRecord { alias, oid }).expect("new OID record has unique alias and OID");
 
         alias
     }
 
     pub fn get_existing_alias(&self, oid: impl IntoGixOid) -> Option<u32> {
         let oid = oid.into_gix_oid();
-        let fingerprint = oid_fingerprint(oid);
-        let alias = self.aliases.get(fingerprint)?;
-        if self.oids.get(alias as usize).is_some_and(|current| *current == oid) {
-            return Some(alias);
-        }
-        self.alias_collisions.get(&fingerprint).and_then(|bucket| bucket.find(&self.oids, oid))
+        self.records.get2(&oid).map(|record| record.alias)
     }
 
     pub fn get_alias_by_idx(&self, idx: usize) -> u32 {
@@ -314,7 +117,7 @@ impl Oids {
     }
 
     pub fn get_oid_by_alias(&self, alias: u32) -> &ObjectId {
-        self.oids.get(alias as usize).unwrap_or(&self.zero)
+        self.records.get1(&alias).map_or(&self.zero, |record| &record.oid)
     }
 
     pub fn get_git2_oid_by_alias(&self, alias: u32) -> Oid {
@@ -333,12 +136,43 @@ impl Oids {
         self.sorted_aliases.len()
     }
 
+    pub fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.records.capacity()
+    }
+
+    pub fn iter_oids(&self) -> impl Iterator<Item = &ObjectId> {
+        self.records.iter().map(|record| &record.oid)
+    }
+
+    pub fn get_alias_by_prefix(&self, prefix: &str) -> Option<u32> {
+        self.records.iter().find(|record| oid_starts_with_hex_prefix(&record.oid, prefix)).map(|record| record.alias)
+    }
+
     pub fn is_zero(&self, oid: &ObjectId) -> bool {
         self.zero == *oid
     }
 }
 
-fn oid_fingerprint(oid: ObjectId) -> OidFingerprint {
-    let bytes = oid.as_bytes();
-    u32::from_be_bytes(bytes[..4].try_into().unwrap())
+fn oid_starts_with_hex_prefix(oid: &ObjectId, prefix: &str) -> bool {
+    prefix.bytes().enumerate().all(|(idx, byte)| {
+        let Some(nibble) = hex_nibble(byte) else {
+            return false;
+        };
+        let oid_byte = oid.as_bytes()[idx / 2];
+        let oid_nibble = if idx % 2 == 0 { oid_byte >> 4 } else { oid_byte & 0x0f };
+        nibble == oid_nibble
+    })
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }

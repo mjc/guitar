@@ -615,10 +615,7 @@ impl App {
                             return true;
                         }
 
-                        let oid = self.oids.oids.iter().find(|oid| oid.to_string().starts_with(sha)).copied();
-
-                        if let Some(oid) = oid {
-                            let oid_alias = self.oids.get_alias_by_oid(oid);
+                        if let Some(oid_alias) = self.oids.get_alias_by_prefix(sha) {
                             let next = self.oids.get_sorted_aliases().iter().position(|&alias| alias == oid_alias).unwrap();
 
                             self.graph_selected = next;
@@ -626,8 +623,9 @@ impl App {
                             self.current_diff_identity = None;
                             if let Some(repo) = self.repo.clone()
                                 && let Some(identity) = self.graph_identity_at(self.graph_selected)
+                                && let Some(oid) = self.graph_oid_for_identity(identity)
                             {
-                                self.current_diff = get_filenames_diff_at_oid(&repo, identity.oid);
+                                self.current_diff = get_filenames_diff_at_oid(&repo, oid);
                                 self.current_diff_identity = Some(identity);
                             }
                             self.modal_input.clear();

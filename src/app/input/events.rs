@@ -1002,7 +1002,10 @@ impl App {
         let Some(identity) = self.graph_identity_at(self.graph_selected) else {
             return empty_state_top_padding(visible_height).saturating_add(1);
         };
-        let Ok(commit) = repo.find_commit(identity.oid) else {
+        let Some(oid) = self.graph_oid_for_identity(identity) else {
+            return empty_state_top_padding(visible_height).saturating_add(1);
+        };
+        let Ok(commit) = repo.find_commit(oid) else {
             return empty_state_top_padding(visible_height).saturating_add(1);
         };
 

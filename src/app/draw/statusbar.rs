@@ -35,7 +35,7 @@ impl App {
         self.graph.branches_window.as_ref().map_or_else(|| self.branches.sorted.iter().filter(|(_, branch)| !self.branches.hidden_branch_names.contains(branch)).count(), |window| window.total)
     }
 
-    pub fn draw_statusbar(&mut self, frame: &mut Frame, _repo: &git2::Repository) {
+    pub fn draw_statusbar(&mut self, frame: &mut Frame) {
         let mut left_spans: Vec<Span> = match self.worktrees.current_name() {
             Some(name) => vec![Span::styled(format!("  {} {name} ", self.symbols.worktree.current), Style::default().fg(self.theme.COLOR_GRASS))],
             None => vec![Span::raw("  ")],

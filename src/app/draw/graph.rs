@@ -18,7 +18,7 @@ use ratatui::{
 use std::collections::HashSet;
 
 impl App {
-    pub fn draw_graph(&mut self, frame: &mut Frame, repo: &git2::Repository) {
+    pub fn draw_graph(&mut self, frame: &mut Frame, repo: Option<&git2::Repository>) {
         if self.layout.graph.width == 0 || self.layout.graph.height == 0 {
             return;
         }
@@ -38,8 +38,10 @@ impl App {
             self.current_diff_identity = None;
             if self.graph_selected != 0
                 && let Some(identity) = self.graph_identity_at(self.graph_selected)
+                && let Some(repo) = repo
+                && let Some(oid) = self.graph_oid_for_identity(identity)
             {
-                self.current_diff = crate::git::queries::diffs::get_filenames_diff_at_oid(repo, identity.oid);
+                self.current_diff = crate::git::queries::diffs::get_filenames_diff_at_oid(repo, oid);
                 self.current_diff_identity = Some(identity);
             }
         }

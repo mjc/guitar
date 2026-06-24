@@ -202,7 +202,6 @@ pub struct GraphFileHistoryRow {
 pub struct GraphIndexIdentity {
     pub index: usize,
     pub alias: u32,
-    pub oid: Oid,
 }
 
 #[derive(Clone, Debug)]
@@ -511,8 +510,12 @@ fn commit_summary_from_repo(repo: &gix::Repository, oid: gix::ObjectId, symbols:
     repo.find_commit(oid).ok().and_then(|commit| commit.message().ok().map(|message| String::from_utf8_lossy(message.summary().as_ref()).into_owned())).unwrap_or_else(|| no_message(symbols))
 }
 
-fn commit_parent_oids_from_repo(repo: &gix::Repository, oid: gix::ObjectId) -> Vec<gix::ObjectId> {
-    repo.find_commit(oid).ok().map(|commit| commit.parent_ids().map(|parent| parent.detach()).collect()).unwrap_or_default()
+fn first_parent_oid_from_repo(repo: &gix::Repository, oid: gix::ObjectId) -> Option<gix::ObjectId> {
+    repo.find_commit(oid).ok()?.parent_ids().next().map(|parent| parent.detach())
+}
+
+fn has_parent_oid(repo: &gix::Repository, child_oid: gix::ObjectId, parent_oid: gix::ObjectId) -> bool {
+    repo.find_commit(child_oid).ok().is_some_and(|commit| commit.parent_ids().any(|parent| parent == parent_oid))
 }
 
 fn graph_rows(
@@ -686,8 +689,7 @@ fn lookup(
         GraphLookupKind::PaneRowAt { pane, index } => GraphLookupResult::PaneRow(pane_rows(pane, walk_ctx).get(index).cloned()),
         GraphLookupKind::BranchIndex { from, direction } => GraphLookupResult::Index(branch_index(walk_ctx, hidden_branch_names, from, direction)),
         GraphLookupKind::ShaPrefix { prefix } => {
-            let oid = walk_ctx.oids.oids.iter().find(|oid| oid.to_string().starts_with(&prefix)).copied();
-            let index = oid.and_then(|oid| walk_ctx.oids.get_existing_alias(oid)).and_then(|alias| walk_ctx.oids.get_sorted_aliases().iter().position(|&current| current == alias));
+            let index = walk_ctx.oids.get_alias_by_prefix(&prefix).and_then(|alias| walk_ctx.oids.get_sorted_aliases().iter().position(|&current| current == alias));
             GraphLookupResult::Index(index)
         },
         GraphLookupKind::Oid { oid } => {
@@ -717,7 +719,7 @@ fn parent_index(walk_ctx: &Walker, index: usize) -> Option<usize> {
         return Some(1).filter(|idx| *idx < walk_ctx.oids.get_commit_count());
     }
 
-    let parent_oid = commit_parent_oids_from_repo(&walk_ctx.gix_repo, oid).into_iter().next()?;
+    let parent_oid = first_parent_oid_from_repo(&walk_ctx.gix_repo, oid)?;
     let parent_alias = walk_ctx.oids.get_existing_alias(parent_oid)?;
     walk_ctx.oids.get_sorted_aliases().iter().position(|&alias| alias == parent_alias)
 }
@@ -730,8 +732,7 @@ fn child_index(walk_ctx: &Walker, index: usize) -> Option<usize> {
 
     walk_ctx.oids.get_sorted_aliases().iter().enumerate().take(index).find_map(|(idx, &alias)| {
         let child_oid = *walk_ctx.oids.get_oid_by_alias(alias);
-        let child_parents = commit_parent_oids_from_repo(&walk_ctx.gix_repo, child_oid);
-        child_parents.contains(&oid).then_some(idx)
+        has_parent_oid(&walk_ctx.gix_repo, child_oid, oid).then_some(idx)
     })
 }
 

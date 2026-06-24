@@ -74,7 +74,15 @@ pub fn get_filenames_diff_at_workdir(repo: &Repository) -> Result<UncommittedCha
 
 pub fn get_staged_filenames_diff(repo: &Repository) -> Result<UncommittedChanges, Error> {
     let workdir = repo.workdir().ok_or_else(|| Error::from_str("bare repositories are not supported"))?;
-    let gix_repo = gix::open(workdir).map_err(gix_error)?;
+    get_staged_filenames_diff_from_path(workdir)
+}
+
+pub fn get_staged_filenames_diff_from_path(path: impl AsRef<Path>) -> Result<UncommittedChanges, Error> {
+    let gix_repo = gix::open(path.as_ref()).map_err(gix_error)?;
+    get_staged_filenames_diff_from_gix_repo(&gix_repo)
+}
+
+fn get_staged_filenames_diff_from_gix_repo(gix_repo: &gix::Repository) -> Result<UncommittedChanges, Error> {
     let Ok(head_tree_id) = gix_repo.head_tree_id() else {
         return Ok(UncommittedChanges::default());
     };

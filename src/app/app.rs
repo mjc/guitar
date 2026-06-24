@@ -12,13 +12,13 @@ use crate::{
         queries::{
             diffs::get_filenames_diff_at_oid,
             files::FileSearchResult,
-            submodules::list_submodules,
-            worktrees::{list_worktrees_metadata, list_worktrees_metadata_with_current_dirty},
+            submodules::list_submodules_from_path,
+            worktrees::{list_worktrees_metadata_from_path, list_worktrees_metadata_with_current_dirty, list_worktrees_metadata_with_current_dirty_from_path},
         },
         repository::open,
     },
     helpers::{
-        branch_visibility::{current_branch_names, load_branch_visibility, prune_hidden_branches, save_branch_visibility},
+        branch_visibility::{current_branch_names_from_repo, load_branch_visibility, prune_hidden_branches, save_branch_visibility},
         heatmap::{DAYS, WEEKS, empty_heatmap},
         keymap::{Command, KeyBinding, KeymapEditError, KeymapSelection},
         layout::LayoutConfig,
@@ -44,8 +44,8 @@ use crate::{
     git::{
         actions::network::NetworkRequest,
         queries::{
-            commits::get_git_user_info,
-            diffs::{get_filenames_diff_at_workdir, get_staged_filenames_diff},
+            commits::get_git_user_info_from_path,
+            diffs::{get_filenames_diff_at_workdir, get_staged_filenames_diff_from_path},
             helpers::{FileChange, UncommittedChanges},
             remotes::list_remotes,
         },
@@ -68,15 +68,67 @@ use ratatui::{
     widgets::{Block, Borders, ListItem},
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     collections::HashMap,
     io,
+    ops::Deref,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool, mpsc::channel},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 use std::{env, io::stdout, path::PathBuf};
+
+#[derive(Clone)]
+pub struct RepoHandle {
+    path: PathBuf,
+    git2: Rc<OnceCell<Rc<Repository>>>,
+}
+
+impl RepoHandle {
+    pub fn from_path(path: PathBuf) -> Self {
+        Self { path, git2: Rc::new(OnceCell::new()) }
+    }
+
+    #[cfg(test)]
+    pub fn from_repo(repo: Rc<Repository>) -> Self {
+        let path = repo.workdir().map(PathBuf::from).unwrap_or_else(|| repo.path().to_path_buf());
+        let git2 = OnceCell::new();
+        let _ = git2.set(repo);
+        Self { path, git2: Rc::new(git2) }
+    }
+
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
+    pub fn git2(&self) -> Result<Rc<Repository>, git2::Error> {
+        if let Some(repo) = self.git2.get() {
+            return Ok(repo.clone());
+        }
+
+        let repo = Rc::new(open(&self.path)?);
+        let _ = self.git2.set(repo.clone());
+        Ok(repo)
+    }
+
+    #[cfg(test)]
+    pub fn is_git2_open(&self) -> bool {
+        self.git2.get().is_some()
+    }
+
+    pub fn git_dir(&self) -> Option<PathBuf> {
+        self.git2().ok().map(|repo| repo.path().to_path_buf())
+    }
+}
+
+impl Deref for RepoHandle {
+    type Target = Repository;
+
+    fn deref(&self) -> &Self::Target {
+        self.git2.get_or_init(|| Rc::new(open(&self.path).expect("repository should open lazily"))).as_ref()
+    }
+}
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum Viewport {
@@ -499,7 +551,7 @@ pub struct App {
     pub logo: Vec<Span<'static>>,
     pub path: Option<String>,
     pub recent: Vec<String>,
-    pub repo: Option<Rc<Repository>>,
+    pub repo: Option<RepoHandle>,
     pub spinner: Spinner,
     pub keymaps: IndexMap<InputMode, IndexMap<KeyBinding, Command>>,
     pub mode: InputMode,
@@ -691,6 +743,48 @@ pub struct App {
 }
 
 impl App {
+    pub(crate) fn git2_repo(&self) -> Option<Rc<Repository>> {
+        self.repo.as_ref()?.git2().ok()
+    }
+
+    pub fn shutdown_background_tasks(&mut self) {
+        if let Some(tx) = self.graph_tx.take() {
+            let _ = tx.send(GraphCommand::Shutdown);
+        }
+        self.graph_event_tx = None;
+        self.graph_rx = None;
+
+        if let Some(cancel) = self.walker_cancel.take() {
+            cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        if let Some(handle) = self.walker_handle.take() {
+            let _ = handle.join();
+        }
+    }
+
+    pub fn wait_until_graph_complete(&mut self, timeout: Duration) -> io::Result<usize> {
+        let start = Instant::now();
+        self.repo.as_ref().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "repository not loaded"))?;
+
+        loop {
+            self.sync_lazy();
+
+            if self.graph.is_complete {
+                return Ok(self.graph_commit_count());
+            }
+
+            if !self.modal_error_message.is_empty() {
+                return Err(io::Error::other(self.modal_error_message.clone()));
+            }
+
+            if start.elapsed() >= timeout {
+                return Err(io::Error::new(io::ErrorKind::TimedOut, "timed out waiting for graph completion"));
+            }
+
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         // Ask supported terminals to distinguish Esc from modified key sequences.
         enable_raw_mode()?;
@@ -717,9 +811,7 @@ impl App {
                 }
 
                 // Pull at most one walker update per tick to keep redraws responsive.
-                if let Some(repo) = self.repo.clone() {
-                    self.sync(&repo);
-                }
+                self.sync_lazy();
                 self.poll_network_request();
 
                 terminal.draw(|frame| self.draw(frame))?;
@@ -764,12 +856,11 @@ impl App {
         );
 
         // Repo-dependent panes render only after a repository has opened successfully.
-        if let Some(repo) = self.repo.clone() {
-            let repo = &repo;
+        if self.repo.is_some() {
             // The central viewport is mutually exclusive, while side panes can be toggled.
             match self.viewport {
                 Viewport::Graph => {
-                    self.draw_graph(frame, repo);
+                    self.draw_graph(frame, None);
                 },
                 Viewport::Viewer => {
                     self.draw_viewer(frame);
@@ -778,7 +869,11 @@ impl App {
                     self.draw_splash(frame);
                 },
                 Viewport::Settings => {
-                    self.draw_settings(frame, repo);
+                    let repo = self.git2_repo();
+                    let repo = repo.as_deref();
+                    if let Some(repo) = repo {
+                        self.draw_settings(frame, repo);
+                    }
                 },
             }
 
@@ -798,7 +893,11 @@ impl App {
                         self.draw_tags(frame);
                     }
                     if self.layout_config.is_stashes {
-                        self.draw_stashes(frame, repo);
+                        let repo = self.git2_repo();
+                        let repo = repo.as_deref();
+                        if let Some(repo) = repo {
+                            self.draw_stashes(frame, repo);
+                        }
                     }
                     if self.layout_config.is_reflogs {
                         self.draw_reflogs(frame);
@@ -816,13 +915,17 @@ impl App {
                         self.draw_status(frame);
                     }
                     if self.layout_config.is_inspector && (self.graph_selected != 0 || self.uncommitted.has_conflicts) {
-                        self.draw_inspector(frame, repo);
+                        let repo = self.git2_repo();
+                        let repo = repo.as_deref();
+                        if let Some(repo) = repo {
+                            self.draw_inspector(frame, repo);
+                        }
                     }
                 },
             }
 
             if !is_splash {
-                self.draw_statusbar(frame, repo);
+                self.draw_statusbar(frame);
             }
 
             // Modals render last so they overlay panes without changing pane layout.
@@ -835,7 +938,11 @@ impl App {
                     self.draw_modal_solo(frame);
                 },
                 Focus::ModalDeleteBranch => {
-                    self.draw_modal_delete_branch(frame, repo);
+                    let repo = self.git2_repo();
+                    let repo = repo.as_deref();
+                    if let Some(repo) = repo {
+                        self.draw_modal_delete_branch(frame, repo);
+                    }
                 },
                 Focus::ModalWorktreeChooser => {
                     self.draw_modal_worktree_chooser(frame);
@@ -923,7 +1030,7 @@ impl App {
         let has_override_path = override_path.is_some();
         let pending_selection_restore = if override_path.is_none() && self.graph_selected != 0 {
             self.graph_identity_at(self.graph_selected)
-                .map(|identity| GraphSelectionRestore { oid: identity.oid, selected_offset: self.graph_selected.saturating_sub(self.graph_scroll.get()) })
+                .and_then(|identity| self.graph_oid_for_identity(identity).map(|oid| GraphSelectionRestore { oid, selected_offset: self.graph_selected.saturating_sub(self.graph_scroll.get()) }))
                 .filter(|restore| restore.oid != Oid::zero())
         } else {
             None
@@ -962,24 +1069,22 @@ impl App {
         let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from("."));
         let absolute_path: PathBuf = try_into_git_repo_root(&canonical_path).unwrap_or(canonical_path);
 
-        // Failure keeps the app usable by falling back to the splash screen.
-        let repo = open(&absolute_path).ok().map(Rc::new);
-
         let absolute_path = absolute_path.display().to_string();
         self.path = Some(absolute_path.clone());
-        self.repo = repo;
+        self.repo = None;
         self.refresh_theme_assets();
 
-        // Repository-specific state starts only after Repository::open succeeds.
-        if let Some(repo) = &self.repo {
-            let current_path = PathBuf::from(&absolute_path);
+        // Repository-specific state starts only after the path opens as a git repository.
+        let current_path = PathBuf::from(&absolute_path);
+        if let Ok(gix_repo) = gix::open(&current_path) {
+            self.repo = Some(RepoHandle::from_path(current_path.clone()));
             self.remotes = list_remotes(current_path.as_path()).unwrap_or_default();
-            self.worktrees = Worktrees::from_entries(list_worktrees_metadata(repo, Some(current_path.as_path())).unwrap_or_default());
-            self.submodules = Submodules::from_entries(list_submodules(repo).unwrap_or_default());
+            self.worktrees = Worktrees::from_entries(list_worktrees_metadata_from_path(current_path.as_path(), Some(current_path.as_path())).unwrap_or_default());
+            self.submodules = Submodules::from_entries(list_submodules_from_path(current_path.as_path()).unwrap_or_default());
 
             let same_repo_reload = !has_override_path && previous_path.as_deref() == Some(absolute_path.as_str());
             let mut hidden_branch_names = if same_repo_reload { existing_hidden_branch_names } else { load_branch_visibility(&absolute_path) };
-            if !hidden_branch_names.is_empty() && prune_hidden_branches(&mut hidden_branch_names, &current_branch_names(repo)) {
+            if !hidden_branch_names.is_empty() && prune_hidden_branches(&mut hidden_branch_names, &current_branch_names_from_repo(&gix_repo)) {
                 save_branch_visibility(&absolute_path, &hidden_branch_names);
             }
             self.branches.hidden_branch_names = hidden_branch_names;
@@ -991,25 +1096,18 @@ impl App {
             }
 
             // Cancel the previous walker before spawning a new one for this repository state.
-            if let Some(tx) = self.graph_tx.take() {
-                let _ = tx.send(GraphCommand::Shutdown);
-            }
-            self.graph_event_tx = None;
-            self.graph_rx = None;
-
-            if let Some(cancel_flag) = &self.walker_cancel {
-                cancel_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-            }
+            let previous_walker = self.walker_handle.take();
+            self.shutdown_background_tasks();
 
             // Join the old worker off-thread so reload never stalls the UI loop.
-            if let Some(handle) = self.walker_handle.take() {
+            if let Some(handle) = previous_walker {
                 std::thread::spawn(move || {
                     let _ = handle.join();
                 });
             }
 
             // Commit actions require a concrete identity, so missing config is treated as fatal.
-            let (name, email) = get_git_user_info(repo).expect("Couldn't get user credentials");
+            let (name, email) = get_git_user_info_from_path(current_path.as_path()).expect("Couldn't get user credentials");
             self.name = name.unwrap();
             self.email = email.unwrap();
 
@@ -1060,13 +1158,12 @@ impl App {
         };
 
         std::thread::spawn(move || {
-            let result = open(&path).map_err(|error| error.to_string()).and_then(|repo| {
-                let staged = get_staged_filenames_diff(&repo).map_err(|error| error.to_string())?;
-                if let Ok(worktrees) = list_worktrees_metadata_with_current_dirty(&repo, Some(path.as_path()), &staged) {
-                    let _ = reload_metadata_tx.send(GraphCommand::UpdateWorktrees { generation, worktrees });
-                }
-                Ok(staged)
-            });
+            let result = get_staged_filenames_diff_from_path(path.as_path()).map_err(|error| error.to_string());
+            if let Ok(staged) = &result
+                && let Ok(worktrees) = list_worktrees_metadata_with_current_dirty_from_path(path.as_path(), Some(path.as_path()), staged)
+            {
+                let _ = reload_metadata_tx.send(GraphCommand::UpdateWorktrees { generation, worktrees });
+            }
             let _ = reload_uncommitted_tx.send(GraphEvent::Uncommitted { generation, result });
         });
     }
@@ -1075,8 +1172,16 @@ impl App {
         if self.current_diff_identity == Some(identity) {
             return;
         }
-        self.current_diff = get_filenames_diff_at_oid(repo, identity.oid);
-        self.current_diff_identity = Some(identity);
+        if let Some(oid) = self.graph_oid_for_identity(identity) {
+            self.current_diff = get_filenames_diff_at_oid(repo, oid);
+            self.current_diff_identity = Some(identity);
+        }
+    }
+
+    fn refresh_current_diff_for_identity_lazy(&mut self, identity: GraphIndexIdentity) {
+        if let Some(repo) = self.git2_repo() {
+            self.refresh_current_diff_for_identity(&repo, identity);
+        }
     }
 
     pub fn ensure_uncommitted_details_loaded(&mut self) {
@@ -1108,6 +1213,14 @@ impl App {
     }
 
     pub fn sync(&mut self, repo: &git2::Repository) {
+        self.sync_events(Some(repo));
+    }
+
+    pub fn sync_lazy(&mut self) {
+        self.sync_events(None);
+    }
+
+    fn sync_events(&mut self, repo: Option<&git2::Repository>) {
         let mut events = Vec::new();
         if let Some(rx) = &self.graph_rx {
             while let Ok(event) = rx.try_recv() {
@@ -1120,7 +1233,7 @@ impl App {
         }
     }
 
-    fn handle_graph_event(&mut self, repo: &git2::Repository, event: GraphEvent) {
+    fn handle_graph_event(&mut self, repo: Option<&git2::Repository>, event: GraphEvent) {
         match event {
             GraphEvent::Progress { generation, version, total, is_first, is_complete } => {
                 if generation != self.graph.generation {
@@ -1162,7 +1275,11 @@ impl App {
                 if self.graph_selected != 0
                     && let Some(identity) = self.graph_identity_at(self.graph_selected)
                 {
-                    self.refresh_current_diff_for_identity(repo, identity);
+                    if let Some(repo) = repo {
+                        self.refresh_current_diff_for_identity(repo, identity);
+                    } else {
+                        self.refresh_current_diff_for_identity_lazy(identity);
+                    }
                 }
             },
             GraphEvent::PaneWindow { generation, version, pane, start, end, total, rows } => {
@@ -1228,7 +1345,11 @@ impl App {
                             && index != 0
                             && let Some(identity) = self.graph_identity_at(index)
                         {
-                            self.refresh_current_diff_for_identity(repo, identity);
+                            if let Some(repo) = repo {
+                                self.refresh_current_diff_for_identity(repo, identity);
+                            } else {
+                                self.refresh_current_diff_for_identity_lazy(identity);
+                            }
                         }
                     },
                     (PendingGraphLookup::OpenInspector, GraphLookupResult::GraphRow(Some(row))) => {
@@ -1236,7 +1357,11 @@ impl App {
                         self.cache_graph_row(row);
                         if index == self.graph_selected {
                             if let Some(identity) = self.graph_identity_at(index) {
-                                self.refresh_current_diff_for_identity(repo, identity);
+                                if let Some(repo) = repo {
+                                    self.refresh_current_diff_for_identity(repo, identity);
+                                } else {
+                                    self.refresh_current_diff_for_identity_lazy(identity);
+                                }
                             }
                             self.layout_config.is_inspector = true;
                             self.focus = Focus::Inspector;
@@ -1322,14 +1447,14 @@ impl App {
 
     pub(crate) fn graph_identity_at(&self, index: usize) -> Option<GraphIndexIdentity> {
         if let Some(row) = self.graph_row_at(index) {
-            return Some(GraphIndexIdentity { index: row.index, alias: row.alias, oid: row.oid });
+            return Some(GraphIndexIdentity { index: row.index, alias: row.alias });
         }
 
         if self.graph_tx.is_some() {
             return None;
         }
 
-        self.oids.get_sorted_aliases().get(index).map(|&alias| GraphIndexIdentity { index, alias, oid: self.oids.get_git2_oid_by_alias(alias) })
+        self.oids.get_sorted_aliases().get(index).map(|&alias| GraphIndexIdentity { index, alias })
     }
 
     pub(crate) fn graph_alias_at(&self, index: usize) -> Option<u32> {
@@ -1337,7 +1462,16 @@ impl App {
     }
 
     pub(crate) fn graph_oid_at(&self, index: usize) -> Option<Oid> {
-        self.graph_identity_at(index).map(|identity| identity.oid)
+        self.graph_identity_at(index).and_then(|identity| self.graph_oid_for_identity(identity))
+    }
+
+    pub(crate) fn graph_oid_for_identity(&self, identity: GraphIndexIdentity) -> Option<Oid> {
+        if let Some(row) = self.graph_row_at(identity.index)
+            && row.alias == identity.alias
+        {
+            return Some(row.oid);
+        }
+        (identity.alias != crate::core::chunk::NONE).then(|| self.oids.get_git2_oid_by_alias(identity.alias))
     }
 
     pub(crate) fn selected_commit_diff_is_loaded(&self) -> bool {
@@ -1450,17 +1584,17 @@ impl App {
         self.graph.index_rows.insert(row.index, row);
     }
 
-    fn select_graph_index_from_lookup(&mut self, repo: &git2::Repository, index: usize) {
+    fn select_graph_index_from_lookup(&mut self, repo: Option<&git2::Repository>, index: usize) {
         self.graph.pending_selection_restore = None;
         self.set_graph_index_from_lookup(repo, index);
     }
 
-    fn restore_graph_index_from_lookup(&mut self, repo: &git2::Repository, index: usize, selected_offset: usize) {
+    fn restore_graph_index_from_lookup(&mut self, repo: Option<&git2::Repository>, index: usize, selected_offset: usize) {
         self.set_graph_index_from_lookup(repo, index);
         self.graph_scroll.set(self.graph_selected.saturating_sub(selected_offset));
     }
 
-    fn set_graph_index_from_lookup(&mut self, repo: &git2::Repository, index: usize) {
+    fn set_graph_index_from_lookup(&mut self, repo: Option<&git2::Repository>, index: usize) {
         self.graph_selected = index.min(self.graph_commit_count().saturating_sub(1));
         self.graph_scroll.set(self.graph_selected);
         self.current_diff.clear();
@@ -1469,7 +1603,11 @@ impl App {
         if self.graph_selected != 0
             && let Some(identity) = self.graph_identity_at(self.graph_selected)
         {
-            self.refresh_current_diff_for_identity(repo, identity);
+            if let Some(repo) = repo {
+                self.refresh_current_diff_for_identity(repo, identity);
+            } else {
+                self.refresh_current_diff_for_identity_lazy(identity);
+            }
         }
     }
 

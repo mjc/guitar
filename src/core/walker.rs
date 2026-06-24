@@ -109,7 +109,7 @@ impl Walker {
 
         let mut pushed: StdHashSet<_> = branch_tips.iter().copied().collect();
         branch_tips.extend(extra_roots.into_iter().filter(|oid| pushed.insert(*oid)));
-        let batcher = Batcher::from_tips(&gix_repo, branch_tips)?;
+        let batcher = Batcher::from_tips_with_oids(&gix_repo, branch_tips, &mut oids)?;
         let head_alias = gix_repo.head_id().ok().map(|oid| oids.get_alias_by_oid(oid.detach()));
         let sorted_batch_capacity = amount.saturating_add(oids.stashes.len());
 
@@ -174,19 +174,17 @@ impl Walker {
             let mut transient_lane: Option<usize> = None;
 
             let (parent_a, parent_b) = if self.stash_aliases.contains(&alias) {
-                if walked_commits.peek().and_then(|commit| self.oids.get_existing_alias(commit.oid)) == Some(alias) {
+                if walked_commits.peek().is_some_and(|commit| commit.alias == alias) {
                     walked_commits.next();
                 }
                 let parent = self.stash_parent_aliases.iter().find_map(|&(stash_alias, parent_alias)| (stash_alias == alias).then_some(parent_alias)).unwrap_or(NONE);
                 (parent, NONE)
             } else {
                 let commit = walked_commits.next().expect("walked commit metadata matches sorted aliases");
-                debug_assert_eq!(self.oids.get_existing_alias(commit.oid), Some(alias));
+                debug_assert_eq!(commit.alias, alias);
 
                 // Only two parents are modeled because the renderer draws one merge edge.
-                let parent_a_oid = commit.first_parent();
-                let parent_b_oid = commit.second_parent();
-                (parent_a_oid.map(|p| self.oids.get_alias_by_oid(p)).unwrap_or(NONE), parent_b_oid.map(|p| self.oids.get_alias_by_oid(p)).unwrap_or(NONE))
+                (commit.first_parent_alias(), commit.second_parent_alias())
             };
 
             let chunk = Chunk::commit(alias, parent_a, parent_b);

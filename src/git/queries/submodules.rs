@@ -14,6 +14,10 @@ fn open_repo(repo: &Repository) -> Result<gix::Repository, git2::Error> {
     gix::open(path).map_err(gix_error)
 }
 
+fn open_repo_path(path: &Path) -> Result<gix::Repository, git2::Error> {
+    gix::open(path).map_err(gix_error)
+}
+
 fn current_branch(repo: &gix::Repository) -> Option<String> {
     let head = repo.head_name().ok().flatten()?;
     head.shorten().to_str().ok().map(str::to_string)
@@ -84,6 +88,25 @@ fn has_committed_or_workdir_submodule_metadata(repo: &Repository) -> bool {
     tree.lookup_entry_by_path(gitmodules).ok().flatten().is_some()
 }
 
+fn has_committed_or_workdir_submodule_metadata_from_path(path: &Path) -> bool {
+    let gitmodules = Path::new(".gitmodules");
+    if path.join(gitmodules).exists() {
+        return true;
+    }
+
+    let Ok(gix_repo) = open_repo_path(path) else {
+        return false;
+    };
+    let Ok(tree_id) = gix_repo.head_tree_id_or_empty() else {
+        return false;
+    };
+    let Ok(tree) = gix_repo.find_tree(tree_id) else {
+        return false;
+    };
+
+    tree.lookup_entry_by_path(gitmodules).ok().flatten().is_some()
+}
+
 pub fn has_submodule_metadata(repo: &Repository) -> bool {
     has_committed_or_workdir_submodule_metadata(repo) || index_contains_gitmodules_path(repo)
 }
@@ -137,6 +160,20 @@ pub fn list_submodules(repo: &Repository) -> Result<Vec<SubmoduleEntry>, git2::E
 
     let gix_repo = open_repo(repo)?;
     let workdir = repo.workdir().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    list_submodules_from_gix_repo(&gix_repo, workdir)
+}
+
+pub fn list_submodules_from_path(path: impl AsRef<Path>) -> Result<Vec<SubmoduleEntry>, git2::Error> {
+    let path = path.as_ref();
+    if !has_committed_or_workdir_submodule_metadata_from_path(path) {
+        return Ok(Vec::new());
+    }
+
+    let gix_repo = open_repo_path(path)?;
+    list_submodules_from_gix_repo(&gix_repo, path.to_path_buf())
+}
+
+fn list_submodules_from_gix_repo(gix_repo: &gix::Repository, workdir: PathBuf) -> Result<Vec<SubmoduleEntry>, git2::Error> {
     let mut entries = Vec::new();
 
     let Some(submodules) = gix_repo.submodules().map_err(gix_error)? else {
