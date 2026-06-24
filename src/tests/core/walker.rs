@@ -198,9 +198,14 @@ fn graph_metadata_from_walker(walker: &Walker) -> HashMap<Oid, CommitMetadata> {
 }
 
 fn graph_metadata_from_current_backend(path: &Path) -> HashMap<Oid, CommitMetadata> {
-    let mut walker = Walker::new(path.display().to_string(), 10_000, HashSet::new(), true, 20).unwrap();
-    while walker.walk() {}
+    let walker = walked_walker(path, 10_000, true);
     graph_metadata_from_walker(&walker)
+}
+
+fn walked_walker(path: &Path, buffer_size: usize, include_head_reflog_roots: bool) -> Walker {
+    let mut walker = Walker::new(path.display().to_string(), buffer_size, HashSet::new(), include_head_reflog_roots, 20).unwrap();
+    while walker.walk() {}
+    walker
 }
 
 fn graph_metadata_from_gitoxide(path: &Path, roots: &[Oid]) -> HashMap<Oid, CommitMetadata> {
@@ -254,8 +259,7 @@ fn walker_loads_commit_reachable_only_from_head_reflog() {
     let base_commit = repo.find_commit(base).unwrap();
     repo.reset(base_commit.as_object(), ResetType::Hard, None).unwrap();
 
-    let mut walker = Walker::new(path.display().to_string(), 100, HashSet::new(), true, 20).unwrap();
-    walker.walk();
+    let walker = walked_walker(&path, 100, true);
     let lost_alias = walker.oids.get_existing_alias(lost).unwrap();
 
     assert!(walker.oids.get_sorted_aliases().contains(&lost_alias));
@@ -269,8 +273,7 @@ fn walker_can_hide_commit_reachable_only_from_head_reflog() {
     let base_commit = repo.find_commit(base).unwrap();
     repo.reset(base_commit.as_object(), ResetType::Hard, None).unwrap();
 
-    let mut walker = Walker::new(path.display().to_string(), 100, HashSet::new(), false, 20).unwrap();
-    walker.walk();
+    let walker = walked_walker(&path, 100, false);
     let lost_alias = walker.oids.get_existing_alias(lost).unwrap();
 
     assert!(!walker.oids.get_sorted_aliases().contains(&lost_alias));
@@ -292,8 +295,7 @@ fn walker_expires_new_right_merge_lane_before_next_rendered_row() {
     repo.reference("refs/heads/merge", merge, true, "test").unwrap();
     repo.set_head("refs/heads/main").unwrap();
 
-    let mut walker = Walker::new(path.display().to_string(), 100, HashSet::new(), false, 20).unwrap();
-    while walker.walk() {}
+    let walker = walked_walker(&path, 100, false);
 
     let merge_alias = walker.oids.get_existing_alias(merge).unwrap();
     let head_alias = walker.oids.get_existing_alias(left_tip).unwrap();
@@ -337,8 +339,7 @@ fn walker_records_ref_stash_and_reflog_lanes_from_update_lane() {
     }
     let stash = stash_tracked_change(&mut repo, "file.txt", "stashed change");
 
-    let mut walker = Walker::new(path.display().to_string(), 100, HashSet::new(), true, 20).unwrap();
-    while walker.walk() {}
+    let walker = walked_walker(&path, 100, true);
 
     let base_alias = walker.oids.get_existing_alias(base).unwrap();
     let stash_alias = walker.oids.get_existing_alias(stash).unwrap();
@@ -382,8 +383,7 @@ fn walker_matches_rev_list_all_for_lightweight_and_annotated_tags() {
         repo.reference("refs/heads/main", branch_tip, true, "test").unwrap();
         repo.set_head("refs/heads/main").unwrap();
 
-        let mut walker = Walker::new(path.display().to_string(), 1, HashSet::new(), false, 20).unwrap();
-        while walker.walk() {}
+        let walker = walked_walker(&path, 1, false);
 
         let sorted_oids: StdHashSet<Oid> =
             walker.oids.get_sorted_aliases().iter().filter_map(|alias| (!walker.oids.is_zero(walker.oids.get_oid_by_alias(*alias))).then(|| walker.oids.get_git2_oid_by_alias(*alias))).collect();
@@ -439,8 +439,7 @@ fn walker_keeps_stash_adjacent_to_its_base_parent() {
     let base = commit(&repo, "file.txt", "base");
     let stash = stash_tracked_change(&mut repo, "file.txt", "stashed change");
 
-    let mut walker = Walker::new(path.display().to_string(), 100, HashSet::new(), false, 20).unwrap();
-    while walker.walk() {}
+    let walker = walked_walker(&path, 100, false);
 
     let aliases = walker.oids.get_sorted_aliases();
     let base_alias = walker.oids.get_existing_alias(base).unwrap();
