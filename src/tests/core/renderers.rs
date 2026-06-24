@@ -11,18 +11,6 @@ use git2::Oid;
 use ratatui::style::Color;
 use std::path::PathBuf;
 
-fn render_graph_projection<'a>(
-    theme: &Theme, symbols: &'a SymbolTheme, rows: &[GraphRow], history: &GraphHistory, head_alias: u32, start: usize, end: usize, render_uncommitted_row: bool,
-) -> Vec<Line<'a>> {
-    super::render_graph_projection(theme, symbols, rows, history, head_alias, start, end, render_uncommitted_row)
-}
-
-fn render_message_projection(
-    theme: &Theme, symbols: &SymbolTheme, rows: &[GraphRow], show_reflog_labels: bool, show_ref_labels: bool, selected: usize, uncommitted: &UncommittedChanges, render_uncommitted_row: bool,
-) -> Vec<Line<'static>> {
-    super::render_message_projection(theme, symbols, rows, show_reflog_labels, show_ref_labels, selected, uncommitted, render_uncommitted_row)
-}
-
 fn graph_row(index: usize, oid: Oid, summary: &str) -> GraphRow {
     GraphRow {
         index,
@@ -491,15 +479,20 @@ fn graph_projection_skips_branch_down_when_merge_is_on_lookahead_flattened_lane(
 }
 
 #[test]
-fn graph_projection_keeps_nonflattened_pipe_symbols_solid() {
+fn graph_projection_keeps_pipe_symbols_solid_or_flattened_as_needed() {
     let theme = Theme::classic();
     let symbols = SymbolTheme::main();
-    let pipe_history = GraphHistory::from_rows(vec![vec![Chunk::commit(1, NONE, NONE), Chunk::dummy(), Chunk::dummy(), Chunk::dummy(), Chunk::commit(9, 99, NONE)]]);
 
-    let pipe_lines = render_graph_projection(&theme, &symbols, &[graph_row_with_alias(0, 1)], &pipe_history, NONE, 0, 1, true);
+    let flattened_history = GraphHistory::from_rows(vec![vec![Chunk::commit(1, NONE, NONE), Chunk::dummy(), Chunk::dummy(), Chunk::dummy(), Chunk::commit(9, 99, NONE).with_flattened(true)]]);
+    let flattened_lines = render_graph_projection(&theme, &symbols, &[graph_row_with_alias(0, 1)], &flattened_history, NONE, 0, 1, true);
+    assert_eq!(span_color(&flattened_lines[0], graph::VERTICAL_DOTTED), Some(theme.COLOR_GREY_500));
+    assert_eq!(span_color(&flattened_lines[0], graph::VERTICAL), None);
 
-    assert_eq!(span_color(&pipe_lines[0], graph::VERTICAL), Some(ColorPicker::from_theme(&theme).get_lane(4)));
-    assert_eq!(span_color(&pipe_lines[0], graph::VERTICAL_DOTTED), None);
+    let solid_history = GraphHistory::from_rows(vec![vec![Chunk::commit(1, NONE, NONE), Chunk::dummy(), Chunk::dummy(), Chunk::dummy(), Chunk::commit(9, 99, NONE)]]);
+    let solid_lines = render_graph_projection(&theme, &symbols, &[graph_row_with_alias(0, 1)], &solid_history, NONE, 0, 1, true);
+
+    assert_eq!(span_color(&solid_lines[0], graph::VERTICAL), Some(ColorPicker::from_theme(&theme).get_lane(4)));
+    assert_eq!(span_color(&solid_lines[0], graph::VERTICAL_DOTTED), None);
 }
 
 #[test]
