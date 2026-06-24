@@ -162,6 +162,10 @@ fn hidden_branches(app: &App) -> Vec<String> {
     branches
 }
 
+fn settings_selection_app(kind: SettingsSelectionKind) -> App {
+    App { viewport: Viewport::Settings, focus: Focus::Viewport, settings_selected: 12, settings_selections: vec![SettingsSelection { line: 12, kind }], ..Default::default() }
+}
+
 fn directional_focus_app() -> App {
     App {
         viewport: Viewport::Graph,
@@ -977,13 +981,7 @@ fn empty_delete_tag_modal_navigation_stays_at_zero() {
 #[test]
 fn settings_shortcut_selection_opens_key_capture() {
     let key_selection = KeymapSelection::new(InputMode::Normal, KeyBinding::new(KeyCode::Char('j'), KeyModifiers::NONE), Command::ScrollDown);
-    let mut app = App {
-        viewport: Viewport::Settings,
-        focus: Focus::Viewport,
-        settings_selected: 12,
-        settings_selections: vec![SettingsSelection { line: 12, kind: SettingsSelectionKind::KeyBinding(key_selection.clone()) }],
-        ..Default::default()
-    };
+    let mut app = settings_selection_app(SettingsSelectionKind::KeyBinding(key_selection.clone()));
 
     app.on_select();
 
@@ -1043,13 +1041,7 @@ fn toggle_help_opens_settings_on_general_tab() {
 
 #[test]
 fn settings_layout_command_toggles_and_stays_in_settings() {
-    let mut app = App {
-        viewport: Viewport::Settings,
-        focus: Focus::Viewport,
-        settings_selected: 12,
-        settings_selections: vec![SettingsSelection { line: 12, kind: SettingsSelectionKind::LayoutCommand(Command::ToggleBranches) }],
-        ..Default::default()
-    };
+    let mut app = settings_selection_app(SettingsSelectionKind::LayoutCommand(Command::ToggleBranches));
     app.layout_config.is_branches = true;
     app.settings_scroll.set(4);
 
@@ -1064,13 +1056,7 @@ fn settings_layout_command_toggles_and_stays_in_settings() {
 
 #[test]
 fn settings_submodule_layout_command_toggles_and_stays_in_settings() {
-    let mut app = App {
-        viewport: Viewport::Settings,
-        focus: Focus::Viewport,
-        settings_selected: 12,
-        settings_selections: vec![SettingsSelection { line: 12, kind: SettingsSelectionKind::LayoutCommand(Command::ToggleSubmodules) }],
-        ..Default::default()
-    };
+    let mut app = settings_selection_app(SettingsSelectionKind::LayoutCommand(Command::ToggleSubmodules));
     app.layout_config.is_submodules = false;
     app.settings_scroll.set(4);
 
@@ -1087,14 +1073,8 @@ fn settings_submodule_layout_command_toggles_and_stays_in_settings() {
 fn settings_symbol_theme_selection_updates_persists_and_stays_in_settings() {
     let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     let path = std::env::temp_dir().join(format!("guitar-symbol-theme-select-{id}.json"));
-    let mut app = App {
-        viewport: Viewport::Settings,
-        focus: Focus::Viewport,
-        settings_selected: 12,
-        settings_selections: vec![SettingsSelection { line: 12, kind: SettingsSelectionKind::SymbolTheme(1) }],
-        symbol_theme_save_path: Some(path.clone()),
-        ..Default::default()
-    };
+    let mut app = settings_selection_app(SettingsSelectionKind::SymbolTheme(1));
+    app.symbol_theme_save_path = Some(path.clone());
     app.settings_scroll.set(4);
 
     app.on_select();
@@ -1112,14 +1092,8 @@ fn settings_symbol_theme_selection_updates_persists_and_stays_in_settings() {
 #[test]
 fn settings_language_selection_updates_persists_and_stays_in_settings() {
     let path = temp_language_path("select");
-    let mut app = App {
-        viewport: Viewport::Settings,
-        focus: Focus::Viewport,
-        settings_selected: 12,
-        settings_selections: vec![SettingsSelection { line: 12, kind: SettingsSelectionKind::Language(1) }],
-        language_save_path: Some(path.clone()),
-        ..Default::default()
-    };
+    let mut app = settings_selection_app(SettingsSelectionKind::Language(1));
+    app.language_save_path = Some(path.clone());
     app.settings_scroll.set(4);
 
     app.on_select();
@@ -1136,13 +1110,7 @@ fn settings_language_selection_updates_persists_and_stays_in_settings() {
 
 #[test]
 fn settings_reset_layout_command_resets_and_stays_in_settings() {
-    let mut app = App {
-        viewport: Viewport::Settings,
-        focus: Focus::Viewport,
-        settings_selected: 12,
-        settings_selections: vec![SettingsSelection { line: 12, kind: SettingsSelectionKind::LayoutCommand(Command::ResetLayout) }],
-        ..Default::default()
-    };
+    let mut app = settings_selection_app(SettingsSelectionKind::LayoutCommand(Command::ResetLayout));
     app.layout_config.is_branches = false;
     app.layout_config.is_shas = false;
 
