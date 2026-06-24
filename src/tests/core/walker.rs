@@ -15,7 +15,7 @@ use crate::{
         symbols::{SymbolTheme, graph},
     },
 };
-use git2::{ObjectType, Oid, Repository, ResetType, Signature, Time};
+use git2::{Oid, Repository, ResetType, Signature, Time};
 use gix::traverse::commit::topo::{Builder as GixTopoBuilder, Sorting as GixTopoSorting};
 use ratatui::text::Line;
 use std::{
@@ -123,7 +123,7 @@ fn collect_root_oids(repo: &mut Repository, include_head_reflog_roots: bool) -> 
     let mut oids = Oids::default();
     let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
     let (branches_local, branches_remote, _) = get_tip_oids(&gix_repo, &mut oids, &HashSet::new());
-    let tags_local = tag_oids_via_libgit2(repo, &mut oids);
+    let tags_local = get_tag_oids(&gix_repo, &mut oids);
     let stashes = get_stashed_commits(&gix_repo, &mut oids);
     let mut aliases: StdHashSet<u32> = branches_local.keys().copied().chain(branches_remote.keys().copied()).chain(tags_local.keys().copied()).chain(stashes).collect();
 
@@ -136,32 +136,6 @@ fn collect_root_oids(repo: &mut Repository, include_head_reflog_roots: bool) -> 
     let mut roots: Vec<_> = aliases.into_iter().map(|alias| oids.get_git2_oid_by_alias(alias)).collect();
     roots.sort_unstable_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
     roots
-}
-
-fn tag_oids_via_libgit2(repo: &Repository, oids: &mut Oids) -> HashMap<u32, Vec<String>> {
-    repo.references()
-        .unwrap()
-        .flatten()
-        .filter_map(|reference| {
-            let tag = reference.name()?.strip_prefix("refs/tags/")?;
-            let commit_oid = reference.peel(ObjectType::Commit).ok()?.id();
-            Some((oids.get_alias_by_oid(commit_oid), tag.to_string()))
-        })
-        .fold(HashMap::new(), |mut tags, (alias, tag)| {
-            tags.entry(alias).or_default().push(tag);
-            tags
-        })
-}
-
-fn git2_stash_root_oids(repo: &mut Repository) -> StdHashSet<Oid> {
-    let mut oids = Oids::default();
-    let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
-    get_stashed_commits(&gix_repo, &mut oids).into_iter().map(|alias| oids.get_git2_oid_by_alias(alias)).collect()
-}
-
-fn git2_head_reflog_root_oids(repo: &Repository) -> StdHashSet<Oid> {
-    let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
-    get_head_reflog_entries(&gix_repo).unwrap_or_default().into_iter().map(|entry| gix_to_git2_oid(entry.new_oid)).collect()
 }
 
 fn gitoxide_stash_root_oids(repo: &gix::Repository) -> StdHashSet<Oid> {
@@ -452,11 +426,13 @@ fn walker_keeps_stash_adjacent_to_its_base_parent() {
 
 #[test]
 fn gitoxide_reproduces_stash_and_head_reflog_roots() {
-    let (path, mut repo) = special_roots_fixture("special-root-parity");
-    let git2_stash_roots = git2_stash_root_oids(&mut repo);
-    let git2_head_reflog_roots = git2_head_reflog_root_oids(&repo);
-
+    let (path, _repo) = special_roots_fixture("special-root-parity");
     let gix_repo = gix::open(&path).unwrap();
+    let git2_stash_roots = {
+        let mut oids = Oids::default();
+        get_stashed_commits(&gix_repo, &mut oids).into_iter().map(|alias| oids.get_git2_oid_by_alias(alias)).collect::<StdHashSet<_>>()
+    };
+    let git2_head_reflog_roots = get_head_reflog_entries(&gix_repo).unwrap_or_default().into_iter().map(|entry| gix_to_git2_oid(entry.new_oid)).collect::<StdHashSet<_>>();
     let gix_stash_roots = gitoxide_stash_root_oids(&gix_repo);
     let gix_head_reflog_roots = gitoxide_head_reflog_root_oids(&gix_repo);
 
