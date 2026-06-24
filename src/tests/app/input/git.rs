@@ -200,6 +200,22 @@ fn app_with_default_remote(name: &str) -> (App, String, String) {
     (app, path_string, branch)
 }
 
+fn assert_active_operation_routes(app: &mut App, kind: OperationKind, continue_action: impl FnOnce(&mut App)) {
+    continue_action(app);
+
+    assert_eq!(app.focus, Focus::ModalOperationProgress);
+    assert_eq!(app.modal_operation_kind, kind);
+    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Continue));
+
+    app.focus = Focus::Viewport;
+    app.pending_operation_action = None;
+    app.on_abort_operation();
+
+    assert_eq!(app.focus, Focus::ModalOperationProgress);
+    assert_eq!(app.modal_operation_kind, kind);
+    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Abort));
+}
+
 #[test]
 fn fetch_all_uses_configured_default_remote() {
     let (mut app, path_string, _) = app_with_default_remote("fetch-default-remote");
@@ -375,19 +391,7 @@ fn revert_state_routes_continue_and_abort_operations() {
     assert_eq!(start_revert(&repo, feature, "reverted: feature").unwrap(), RevertOutcome::Conflict);
 
     let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
-    app.on_revert();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Revert);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Continue));
-
-    app.focus = Focus::Viewport;
-    app.pending_operation_action = None;
-    app.on_abort_operation();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Revert);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Abort));
+    assert_active_operation_routes(&mut app, OperationKind::Revert, |app| app.on_revert());
     let _ = fs::remove_dir_all(path);
 }
 
@@ -401,19 +405,7 @@ fn cherrypick_state_routes_continue_and_abort_operations() {
     assert_eq!(start_cherrypick(&repo, feature, "cherrypicked: feature").unwrap(), CherrypickOutcome::Conflict);
 
     let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
-    app.on_continue_operation();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Cherrypick);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Continue));
-
-    app.focus = Focus::Viewport;
-    app.pending_operation_action = None;
-    app.on_abort_operation();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Cherrypick);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Abort));
+    assert_active_operation_routes(&mut app, OperationKind::Cherrypick, |app| app.on_continue_operation());
     let _ = fs::remove_dir_all(path);
 }
 
@@ -431,19 +423,7 @@ fn rebase_state_routes_continue_and_abort_operations() {
     assert_eq!(start_rebase(&repo, main).unwrap(), RebaseOutcome::Conflict);
 
     let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
-    app.on_rebase();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Rebase);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Continue));
-
-    app.focus = Focus::Viewport;
-    app.pending_operation_action = None;
-    app.on_abort_operation();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Rebase);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Abort));
+    assert_active_operation_routes(&mut app, OperationKind::Rebase, |app| app.on_rebase());
     let _ = fs::remove_dir_all(path);
 }
 
@@ -460,19 +440,7 @@ fn merge_state_routes_continue_and_abort_operations() {
     assert_eq!(start_merge(&repo, feature).unwrap(), MergeOutcome::Conflict);
 
     let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
-    app.on_continue_operation();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Merge);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Continue));
-
-    app.focus = Focus::Viewport;
-    app.pending_operation_action = None;
-    app.on_abort_operation();
-
-    assert_eq!(app.focus, Focus::ModalOperationProgress);
-    assert_eq!(app.modal_operation_kind, OperationKind::Merge);
-    assert_eq!(app.pending_operation_action, Some(PendingOperationAction::Abort));
+    assert_active_operation_routes(&mut app, OperationKind::Merge, |app| app.on_continue_operation());
     let _ = fs::remove_dir_all(path);
 }
 
