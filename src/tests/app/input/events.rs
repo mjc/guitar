@@ -79,6 +79,80 @@ fn context_menu_labels(app: &App) -> Vec<String> {
     app.context_menu.as_ref().map(|menu| menu.items.iter().map(|item| item.label.clone()).collect()).unwrap_or_default()
 }
 
+fn selectable_left_panes_app() -> App {
+    let mut app = graph_app();
+    app.layout_config.is_branches = true;
+    app.layout_config.is_tags = true;
+    app.layout_config.is_stashes = true;
+    app.layout_config.is_reflogs = true;
+    app.layout_config.is_worktrees = true;
+    app.layout_config.is_submodules = true;
+    app.layout.branches = Rect::new(0, 0, 20, 6);
+    app.layout.tags = Rect::new(20, 0, 20, 6);
+    app.layout.stashes = Rect::new(40, 0, 20, 6);
+    app.layout.reflogs = Rect::new(60, 0, 20, 6);
+    app.layout.worktrees = Rect::new(80, 0, 20, 6);
+    app.layout.submodules = Rect::new(100, 0, 20, 6);
+    app.branches.sorted = (0..10).map(|idx| (idx, format!("branch-{idx}"))).collect();
+    app.tags.sorted = (0..10).map(|idx| (idx, format!("tag-{idx}"))).collect();
+    app.oids.stashes = (0..10).collect();
+    app.reflogs.entries = (0..10)
+        .map(|idx| HeadReflogAliasEntry {
+            selector: format!("HEAD@{{{idx}}}"),
+            old_oid: test_oid(1),
+            new_oid: test_oid(2),
+            new_alias: idx,
+            message: format!("commit {idx}"),
+            time: gix::date::Time::new(idx as i64, 0),
+        })
+        .collect();
+    app.worktrees.entries = (0..10).map(|idx| worktree_entry(&format!("worktree-{idx}"))).collect();
+    app.submodules.entries = (0..10).map(|idx| submodule_entry(&format!("submodule-{idx}"), PathBuf::from(format!("/tmp/submodule-{idx}")))).collect();
+    app.branches_scroll.set(2);
+    app.tags_scroll.set(2);
+    app.stashes_scroll.set(2);
+    app.reflogs_scroll.set(2);
+    app.worktrees_scroll.set(2);
+    app.submodules_scroll.set(2);
+    app
+}
+
+fn selectable_status_rows_app() -> App {
+    let mut app = graph_app();
+    app.layout_config.is_status = true;
+    app.layout.status_top = Rect::new(0, 0, 30, 6);
+    app.layout.status_bottom = Rect::new(0, 10, 30, 6);
+    app.is_uncommitted_loaded = true;
+    app.is_uncommitted_detail_loaded = true;
+    app.uncommitted.is_staged = true;
+    app.uncommitted.is_unstaged = true;
+    app.uncommitted.staged.modified = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+    app.uncommitted.unstaged.modified = vec!["e".into(), "f".into(), "g".into(), "h".into()];
+    app.status_top_scroll.set(1);
+    app.status_bottom_scroll.set(1);
+    app
+}
+
+fn assert_selected_row(app: &App, focus: Focus, expected: usize) {
+    match focus {
+        Focus::Branches => assert_eq!(app.branches_selected, expected),
+        Focus::Tags => assert_eq!(app.tags_selected, expected),
+        Focus::Stashes => assert_eq!(app.stashes_selected, expected),
+        Focus::Reflogs => assert_eq!(app.reflogs_selected, expected),
+        Focus::Worktrees => assert_eq!(app.worktrees_selected, expected),
+        Focus::Submodules => assert_eq!(app.submodules_selected, expected),
+        Focus::StatusTop => assert_eq!(app.status_top_selected, expected),
+        Focus::StatusBottom => assert_eq!(app.status_bottom_selected, expected),
+        _ => unreachable!("unexpected focus for selected row assertion: {focus:?}"),
+    }
+}
+
+fn double_click(app: &mut App, column: u16, row: u16) {
+    let click = left_down(column, row);
+    app.handle_mouse_event(click);
+    app.handle_mouse_event(click);
+}
+
 #[test]
 fn right_click_opens_context_menu_with_first_enabled_item() {
     let mut app = context_menu_app();
@@ -658,80 +732,26 @@ fn mouse_click_selects_viewer_row_without_leaving_viewer() {
 
 #[test]
 fn mouse_click_selects_left_pane_rows() {
-    let mut app = graph_app();
-    app.layout_config.is_branches = true;
-    app.layout_config.is_tags = true;
-    app.layout_config.is_stashes = true;
-    app.layout_config.is_reflogs = true;
-    app.layout_config.is_worktrees = true;
-    app.layout_config.is_submodules = true;
-    app.layout.branches = Rect::new(0, 0, 20, 6);
-    app.layout.tags = Rect::new(20, 0, 20, 6);
-    app.layout.stashes = Rect::new(40, 0, 20, 6);
-    app.layout.reflogs = Rect::new(60, 0, 20, 6);
-    app.layout.worktrees = Rect::new(80, 0, 20, 6);
-    app.layout.submodules = Rect::new(100, 0, 20, 6);
-    app.branches.sorted = (0..10).map(|idx| (idx, format!("branch-{idx}"))).collect();
-    app.tags.sorted = (0..10).map(|idx| (idx, format!("tag-{idx}"))).collect();
-    app.oids.stashes = (0..10).collect();
-    app.reflogs.entries = (0..10)
-        .map(|idx| HeadReflogAliasEntry {
-            selector: format!("HEAD@{{{idx}}}"),
-            old_oid: test_oid(1),
-            new_oid: test_oid(2),
-            new_alias: idx,
-            message: format!("commit {idx}"),
-            time: gix::date::Time::new(idx as i64, 0),
-        })
-        .collect();
-    app.worktrees.entries = (0..10).map(|idx| worktree_entry(&format!("worktree-{idx}"))).collect();
-    app.submodules.entries = (0..10).map(|idx| submodule_entry(&format!("submodule-{idx}"), PathBuf::from(format!("/tmp/submodule-{idx}")))).collect();
-    app.branches_scroll.set(2);
-    app.tags_scroll.set(2);
-    app.stashes_scroll.set(2);
-    app.reflogs_scroll.set(2);
-    app.worktrees_scroll.set(2);
-    app.submodules_scroll.set(2);
+    let mut app = selectable_left_panes_app();
 
-    app.handle_mouse_event(left_down(1, 1));
-    assert_eq!((app.focus, app.branches_selected), (Focus::Branches, 3));
+    let cases = [(1, Focus::Branches), (21, Focus::Tags), (41, Focus::Stashes), (61, Focus::Reflogs), (81, Focus::Worktrees), (101, Focus::Submodules)];
 
-    app.handle_mouse_event(left_down(21, 1));
-    assert_eq!((app.focus, app.tags_selected), (Focus::Tags, 3));
-
-    app.handle_mouse_event(left_down(41, 1));
-    assert_eq!((app.focus, app.stashes_selected), (Focus::Stashes, 3));
-
-    app.handle_mouse_event(left_down(61, 1));
-    assert_eq!((app.focus, app.reflogs_selected), (Focus::Reflogs, 3));
-
-    app.handle_mouse_event(left_down(81, 1));
-    assert_eq!((app.focus, app.worktrees_selected), (Focus::Worktrees, 3));
-
-    app.handle_mouse_event(left_down(101, 1));
-    assert_eq!((app.focus, app.submodules_selected), (Focus::Submodules, 3));
+    for (column, expected_focus) in cases {
+        app.handle_mouse_event(left_down(column, 1));
+        assert_eq!(app.focus, expected_focus);
+        assert_selected_row(&app, expected_focus, 3);
+    }
 }
 
 #[test]
 fn mouse_click_selects_status_rows() {
-    let mut app = graph_app();
-    app.layout_config.is_status = true;
-    app.layout.status_top = Rect::new(0, 0, 30, 6);
-    app.layout.status_bottom = Rect::new(0, 10, 30, 6);
-    app.is_uncommitted_loaded = true;
-    app.is_uncommitted_detail_loaded = true;
-    app.uncommitted.is_staged = true;
-    app.uncommitted.is_unstaged = true;
-    app.uncommitted.staged.modified = vec!["a".into(), "b".into(), "c".into(), "d".into()];
-    app.uncommitted.unstaged.modified = vec!["e".into(), "f".into(), "g".into(), "h".into()];
-    app.status_top_scroll.set(1);
-    app.status_bottom_scroll.set(1);
+    let mut app = selectable_status_rows_app();
 
-    app.handle_mouse_event(left_down(1, 1));
-    assert_eq!((app.focus, app.status_top_selected), (Focus::StatusTop, 2));
-
-    app.handle_mouse_event(left_down(1, 12));
-    assert_eq!((app.focus, app.status_bottom_selected), (Focus::StatusBottom, 2));
+    for (row, expected_focus) in [(1, Focus::StatusTop), (12, Focus::StatusBottom)] {
+        app.handle_mouse_event(left_down(1, row));
+        assert_eq!(app.focus, expected_focus);
+        assert_selected_row(&app, expected_focus, 2);
+    }
 }
 
 #[test]
@@ -833,8 +853,7 @@ fn double_click_on_settings_selectable_row_acts_like_enter() {
     app.layout.graph = Rect::new(0, 0, 40, 5);
     app.settings_selections = vec![SettingsSelection { line: 2, kind: SettingsSelectionKind::KeyBinding(key_selection.clone()) }];
 
-    app.handle_mouse_event(left_down(1, 2));
-    app.handle_mouse_event(left_down(1, 2));
+    double_click(&mut app, 1, 2);
 
     assert_eq!(app.focus, Focus::ModalKeyCapture);
     assert_eq!(app.modal_key_capture_selection, Some(key_selection));
@@ -847,8 +866,7 @@ fn double_click_on_settings_recent_repository_row_is_selection_only() {
     app.recent = vec!["/repo/a".into()];
     app.settings_selections = vec![SettingsSelection { line: 2, kind: SettingsSelectionKind::RecentRepository(0) }];
 
-    app.handle_mouse_event(left_down(1, 2));
-    app.handle_mouse_event(left_down(1, 2));
+    double_click(&mut app, 1, 2);
 
     assert_eq!(app.viewport, Viewport::Settings);
     assert_eq!(app.focus, Focus::Viewport);
@@ -868,8 +886,7 @@ fn double_click_on_branch_row_acts_like_enter() {
     app.oids.sorted_aliases = vec![NONE, alias];
     app.branches.sorted = vec![(alias, "feature".into())];
 
-    app.handle_mouse_event(left_down(1, 0));
-    app.handle_mouse_event(left_down(1, 0));
+    double_click(&mut app, 1, 0);
 
     assert_eq!(app.focus, Focus::Viewport);
     assert_eq!(app.graph_selected, 1);
@@ -888,8 +905,7 @@ fn viewer_mode_double_click_on_branch_row_acts_like_enter() {
     app.oids.sorted_aliases = vec![NONE, alias];
     app.branches.sorted = vec![(alias, "feature".into())];
 
-    app.handle_mouse_event(left_down(1, 0));
-    app.handle_mouse_event(left_down(1, 0));
+    double_click(&mut app, 1, 0);
 
     assert_eq!(app.focus, Focus::Viewport);
     assert_eq!(app.viewport, Viewport::Graph);
@@ -937,8 +953,7 @@ fn double_click_on_tag_stash_and_reflog_rows_act_like_enter() {
     reflog_app.reflogs.entries =
         vec![HeadReflogAliasEntry { selector: "HEAD@{0}".into(), old_oid: tag_oid, new_oid: reflog_oid, new_alias: reflog_alias, message: "commit reflog".into(), time: gix::date::Time::new(0, 0) }];
 
-    reflog_app.handle_mouse_event(left_down(1, 0));
-    reflog_app.handle_mouse_event(left_down(1, 0));
+    double_click(&mut reflog_app, 1, 0);
     assert_eq!((reflog_app.focus, reflog_app.graph_selected), (Focus::Viewport, 1));
 }
 
@@ -967,8 +982,7 @@ fn double_click_on_worktree_row_acts_like_enter() {
         is_dirty: false,
     }];
 
-    app.handle_mouse_event(left_down(1, 0));
-    app.handle_mouse_event(left_down(1, 0));
+    double_click(&mut app, 1, 0);
 
     assert_eq!(app.focus, Focus::Viewport);
     assert_eq!(app.viewport, Viewport::Graph);
@@ -989,8 +1003,7 @@ fn double_click_on_submodule_row_acts_like_enter() {
     app.layout.submodules = Rect::new(0, 0, 20, 6);
     app.submodules.entries = vec![submodule_entry("deps/child", target_path)];
 
-    app.handle_mouse_event(left_down(1, 0));
-    app.handle_mouse_event(left_down(1, 0));
+    double_click(&mut app, 1, 0);
 
     assert_eq!(app.focus, Focus::Viewport);
     assert_eq!(app.viewport, Viewport::Graph);
@@ -1011,8 +1024,7 @@ fn double_click_on_status_row_acts_like_enter() {
     app.uncommitted.is_staged = true;
     app.uncommitted.staged.modified = vec!["file.txt".into()];
 
-    app.handle_mouse_event(left_down(1, 0));
-    app.handle_mouse_event(left_down(1, 0));
+    double_click(&mut app, 1, 0);
 
     assert_eq!(app.viewport, Viewport::Viewer);
     assert_eq!(app.file_name.as_deref(), Some("file.txt"));
@@ -1035,8 +1047,7 @@ fn viewer_mode_double_click_on_status_row_refreshes_viewer_file() {
     app.uncommitted.is_staged = true;
     app.uncommitted.staged.modified = vec!["old.txt".into(), "new.txt".into()];
 
-    app.handle_mouse_event(left_down(41, 1));
-    app.handle_mouse_event(left_down(41, 1));
+    double_click(&mut app, 41, 1);
 
     assert_eq!(app.focus, Focus::Viewport);
     assert_eq!(app.viewport, Viewport::Viewer);
@@ -1058,8 +1069,7 @@ fn double_click_on_graph_and_splash_only_selects() {
     splash.layout.graph = Rect::new(0, 0, 120, 20);
     splash.recent = vec!["/repo/a".into(), "/repo/b".into()];
 
-    splash.handle_mouse_event(left_down(1, 15));
-    splash.handle_mouse_event(left_down(1, 15));
+    double_click(&mut splash, 1, 15);
 
     assert_eq!(splash.splash_selected, 0);
     assert_eq!(splash.viewport, Viewport::Splash);
