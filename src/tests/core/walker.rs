@@ -365,44 +365,31 @@ fn walker_new_collects_startup_metadata_before_walking() {
 }
 
 #[test]
-fn walker_matches_rev_list_all_by_walking_tag_only_commits() {
-    let (path, repo) = temp_repo("tag-only-root");
-    let root = commit(&repo, "root.txt", "root");
-    let branch_tip = commit(&repo, "branch.txt", "branch");
-    let tag_only = commit_with_parents(&repo, "tag-only.txt", "tag-only", &[], 99);
-    let tag_only_commit = repo.find_commit(tag_only).unwrap();
-    repo.tag_lightweight("tag-only", tag_only_commit.as_object(), false).unwrap();
-    repo.reference("refs/heads/main", branch_tip, true, "test").unwrap();
-    repo.set_head("refs/heads/main").unwrap();
+fn walker_matches_rev_list_all_for_lightweight_and_annotated_tags() {
+    for annotated in [false, true] {
+        let (path, repo) = temp_repo(if annotated { "annotated-tag-root" } else { "tag-only-root" });
+        let root = commit(&repo, "root.txt", "root");
+        let branch_tip = commit(&repo, "branch.txt", "branch");
+        let tagged = commit_with_parents(&repo, "tagged.txt", "tagged", &[], if annotated { 100 } else { 99 });
+        let tagged_commit = repo.find_commit(tagged).unwrap();
 
-    let mut walker = Walker::new(path.display().to_string(), 1, HashSet::new(), false, 20).unwrap();
-    while walker.walk() {}
+        if annotated {
+            let sig = Signature::now("Test User", "test@example.com").unwrap();
+            repo.tag("annotated", tagged_commit.as_object(), &sig, "annotated", false).unwrap();
+        } else {
+            repo.tag_lightweight("tag-only", tagged_commit.as_object(), false).unwrap();
+        }
+        repo.reference("refs/heads/main", branch_tip, true, "test").unwrap();
+        repo.set_head("refs/heads/main").unwrap();
 
-    let sorted_oids: StdHashSet<Oid> =
-        walker.oids.get_sorted_aliases().iter().filter_map(|alias| (!walker.oids.is_zero(walker.oids.get_oid_by_alias(*alias))).then(|| walker.oids.get_git2_oid_by_alias(*alias))).collect();
+        let mut walker = Walker::new(path.display().to_string(), 1, HashSet::new(), false, 20).unwrap();
+        while walker.walk() {}
 
-    assert_eq!(sorted_oids, StdHashSet::from([root, branch_tip, tag_only]));
-}
+        let sorted_oids: StdHashSet<Oid> =
+            walker.oids.get_sorted_aliases().iter().filter_map(|alias| (!walker.oids.is_zero(walker.oids.get_oid_by_alias(*alias))).then(|| walker.oids.get_git2_oid_by_alias(*alias))).collect();
 
-#[test]
-fn walker_matches_rev_list_all_for_annotated_tags() {
-    let (path, repo) = temp_repo("annotated-tag-root");
-    let root = commit(&repo, "root.txt", "root");
-    let branch_tip = commit(&repo, "branch.txt", "branch");
-    let tagged = commit_with_parents(&repo, "tagged.txt", "tagged", &[], 100);
-    let tagged_commit = repo.find_commit(tagged).unwrap();
-    let sig = Signature::now("Test User", "test@example.com").unwrap();
-    repo.tag("annotated", tagged_commit.as_object(), &sig, "annotated", false).unwrap();
-    repo.reference("refs/heads/main", branch_tip, true, "test").unwrap();
-    repo.set_head("refs/heads/main").unwrap();
-
-    let mut walker = Walker::new(path.display().to_string(), 1, HashSet::new(), false, 20).unwrap();
-    while walker.walk() {}
-
-    let sorted_oids: StdHashSet<Oid> =
-        walker.oids.get_sorted_aliases().iter().filter_map(|alias| (!walker.oids.is_zero(walker.oids.get_oid_by_alias(*alias))).then(|| walker.oids.get_git2_oid_by_alias(*alias))).collect();
-
-    assert_eq!(sorted_oids, StdHashSet::from([root, branch_tip, tagged]));
+        assert_eq!(sorted_oids, StdHashSet::from([root, branch_tip, tagged]));
+    }
 }
 
 #[test]
