@@ -1,3 +1,4 @@
+use crate::git::actions::worktrees::create_worktree;
 use git2::{Oid, Repository};
 use std::{
     env, fs,
@@ -8,6 +9,14 @@ use std::{
 
 pub struct TestDir {
     path: PathBuf,
+}
+
+pub struct LinkedWorktreeFixture {
+    pub repo_path: PathBuf,
+    pub repo: Repository,
+    pub linked_path: PathBuf,
+    pub linked_repo: Repository,
+    pub base: Oid,
 }
 
 impl TestDir {
@@ -112,6 +121,16 @@ pub fn source_with_origin(dir: &TestDir) -> (Repository, PathBuf) {
     init_bare_repo_at(&remote_path);
     add_remote_path(&source, "origin", &remote_path);
     (source, remote_path)
+}
+
+pub fn linked_worktree_fixture(dir: &TestDir, name: &str) -> LinkedWorktreeFixture {
+    let repo_path = dir.join("repo");
+    let repo = init_repo_at(&repo_path);
+    let base = commit_file(&repo, "file.txt", "base\n", "base");
+    let linked_path = dir.join(name);
+    create_worktree(&repo, name, &linked_path, base).unwrap();
+    let linked_repo = Repository::open(&linked_path).unwrap();
+    LinkedWorktreeFixture { repo_path, repo, linked_path, linked_repo, base }
 }
 
 pub fn parent_with_submodule(dir: &TestDir) -> (Repository, PathBuf) {

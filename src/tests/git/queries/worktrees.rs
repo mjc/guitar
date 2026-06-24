@@ -4,60 +4,20 @@ use crate::{
     git::{
         actions::worktrees::{create_worktree, lock_worktree, remove_worktree, unlock_worktree},
         queries::commits::get_current_branch,
+        test_support::{TestDir, commit_file, init_repo_at, linked_worktree_fixture, stage_path, write_workdir_file},
     },
 };
-use git2::{Repository, Signature};
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    process,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(name: &str) -> Self {
-        let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let path = env::temp_dir().join(format!("guitar-{name}-{}-{suffix}", process::id()));
-        fs::create_dir_all(&path).unwrap();
-        Self { path }
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
-
-fn init_repo(path: &Path) -> Repository {
-    let repo = Repository::init(path).unwrap();
-    fs::write(path.join("file.txt"), "hello\n").unwrap();
-    let mut index = repo.index().unwrap();
-    index.add_path(Path::new("file.txt")).unwrap();
-    let tree_id = index.write_tree().unwrap();
-    let tree = repo.find_tree(tree_id).unwrap();
-    let sig = Signature::now("Tester", "tester@example.com").unwrap();
-    repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
-    drop(tree);
-    repo
-}
+use std::fs;
 
 #[test]
 fn lists_main_and_linked_worktrees_with_stable_metadata() {
     let dir = TestDir::new("worktree-list");
-    let repo_path = dir.path.join("repo");
-    let alpha_path = dir.path.join("repo-alpha");
-    let zeta_path = dir.path.join("repo-zeta");
-    fs::create_dir_all(&repo_path).unwrap();
-    let repo = init_repo(&repo_path);
-    let oid = repo.head().unwrap().target().unwrap();
+    let repo_path = dir.join("repo");
+    let repo = init_repo_at(&repo_path);
+    let oid = commit_file(&repo, "file.txt", "hello\n", "initial");
 
-    create_worktree(&repo, "zeta", &zeta_path, oid).unwrap();
-    create_worktree(&repo, "alpha", &alpha_path, oid).unwrap();
+    create_worktree(&repo, "zeta", &dir.join("repo-zeta"), oid).unwrap();
+    create_worktree(&repo, "alpha", &dir.join("repo-alpha"), oid).unwrap();
 
     let entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
     assert_eq!(entries.len(), 3);
@@ -85,45 +45,29 @@ fn lists_main_and_linked_worktrees_with_stable_metadata() {
 #[test]
 fn marks_current_linked_worktree() {
     let dir = TestDir::new("worktree-current");
-    let repo_path = dir.path.join("repo");
-    let worktree_path = dir.path.join("repo-feature");
-    fs::create_dir_all(&repo_path).unwrap();
-    let repo = init_repo(&repo_path);
-    let oid = repo.head().unwrap().target().unwrap();
+    let fixture = linked_worktree_fixture(&dir, "feature");
 
-    create_worktree(&repo, "feature", &worktree_path, oid).unwrap();
-    let linked_repo = Repository::open(&worktree_path).unwrap();
-
-    let entries = list_worktrees(&linked_repo, Some(&worktree_path)).unwrap();
+    let entries = list_worktrees(&fixture.linked_repo, Some(&fixture.linked_path)).unwrap();
     let linked = entries.iter().find(|entry| entry.name == "feature").unwrap();
     let main = entries.iter().find(|entry| entry.is_main()).unwrap();
 
     assert!(linked.is_current);
     assert_eq!(linked.branch.as_deref(), Some("feature"));
-    assert_eq!(linked.head, Some(git2_to_gix_oid(oid)));
+    assert_eq!(linked.head, Some(git2_to_gix_oid(fixture.base)));
     assert!(main.is_main());
     assert!(!main.is_current);
-    assert_eq!(main.head, Some(git2_to_gix_oid(oid)));
+    assert_eq!(main.head, Some(git2_to_gix_oid(fixture.base)));
 }
 
 #[test]
 fn marks_dirty_worktrees_when_staged_files_exist() {
     let dir = TestDir::new("worktree-staged");
-    let repo_path = dir.path.join("repo");
-    let worktree_path = dir.path.join("repo-feature");
-    fs::create_dir_all(&repo_path).unwrap();
-    let repo = init_repo(&repo_path);
-    let oid = repo.head().unwrap().target().unwrap();
+    let fixture = linked_worktree_fixture(&dir, "feature");
 
-    create_worktree(&repo, "feature", &worktree_path, oid).unwrap();
-    let linked_repo = Repository::open(&worktree_path).unwrap();
+    write_workdir_file(&fixture.linked_repo, "staged.txt", "staged\n");
+    stage_path(&fixture.linked_repo, "staged.txt");
 
-    fs::write(worktree_path.join("staged.txt"), "staged\n").unwrap();
-    let mut index = linked_repo.index().unwrap();
-    index.add_path(Path::new("staged.txt")).unwrap();
-    index.write().unwrap();
-
-    let entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
+    let entries = list_worktrees(&fixture.repo, Some(&fixture.repo_path)).unwrap();
     let linked = entries.iter().find(|entry| entry.name == "feature").unwrap();
 
     assert!(linked.is_dirty);
@@ -131,13 +75,14 @@ fn marks_dirty_worktrees_when_staged_files_exist() {
 }
 
 #[test]
-fn marks_dirty_worktrees_when_untracked_files_exist() {
+fn marks_dirty_main_worktree_when_staged_files_exist() {
     let dir = TestDir::new("worktree-dirty");
-    let repo_path = dir.path.join("repo");
-    fs::create_dir_all(&repo_path).unwrap();
-    let repo = init_repo(&repo_path);
+    let repo_path = dir.join("repo");
+    let repo = init_repo_at(&repo_path);
+    commit_file(&repo, "file.txt", "hello\n", "initial");
 
-    fs::write(repo_path.join("untracked.txt"), "extra\n").unwrap();
+    write_workdir_file(&repo, "staged.txt", "staged\n");
+    stage_path(&repo, "staged.txt");
 
     let entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
     let main = entries.iter().find(|entry| entry.is_main()).unwrap();
@@ -149,10 +94,9 @@ fn marks_dirty_worktrees_when_untracked_files_exist() {
 #[test]
 fn metadata_listing_skips_dirty_scan_but_keeps_identity() {
     let dir = TestDir::new("worktree-metadata");
-    let repo_path = dir.path.join("repo");
-    fs::create_dir_all(&repo_path).unwrap();
-    let repo = init_repo(&repo_path);
-    let oid = repo.head().unwrap().target().unwrap();
+    let repo_path = dir.join("repo");
+    let repo = init_repo_at(&repo_path);
+    let oid = commit_file(&repo, "file.txt", "hello\n", "initial");
 
     fs::write(repo_path.join("untracked.txt"), "extra\n").unwrap();
 
@@ -168,19 +112,17 @@ fn metadata_listing_skips_dirty_scan_but_keeps_identity() {
 #[test]
 fn metadata_listing_can_mark_current_worktree_from_uncommitted_state() {
     let dir = TestDir::new("worktree-current-dirty-metadata");
-    let repo_path = dir.path.join("repo");
-    let worktree_path = dir.path.join("repo-feature");
-    fs::create_dir_all(&repo_path).unwrap();
-    let repo = init_repo(&repo_path);
-    let oid = repo.head().unwrap().target().unwrap();
+    let fixture = linked_worktree_fixture(&dir, "feature");
 
-    create_worktree(&repo, "feature", &worktree_path, oid).unwrap();
-    let linked_repo = Repository::open(&worktree_path).unwrap();
-
-    let entries = list_worktrees_metadata_with_current_dirty(&linked_repo, Some(&worktree_path), &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() }).unwrap();
-    let path_entries =
-        list_worktrees_metadata_with_current_dirty_from_path(&worktree_path, Some(&worktree_path), &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() })
+    let entries =
+        list_worktrees_metadata_with_current_dirty(&fixture.linked_repo, Some(&fixture.linked_path), &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() })
             .unwrap();
+    let path_entries = list_worktrees_metadata_with_current_dirty_from_path(
+        &fixture.linked_path,
+        Some(&fixture.linked_path),
+        &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() },
+    )
+    .unwrap();
     let linked = entries.iter().find(|entry| entry.name == "feature").unwrap();
     let main = entries.iter().find(|entry| entry.is_main()).unwrap();
     let path_linked = path_entries.iter().find(|entry| entry.name == "feature").unwrap();
@@ -196,14 +138,11 @@ fn metadata_listing_can_mark_current_worktree_from_uncommitted_state() {
 #[test]
 fn reports_lock_reason_and_prunability_for_stale_worktrees() {
     let dir = TestDir::new("worktree-stale");
-    let repo_path = dir.path.join("repo");
-    let locked_path = dir.path.join("repo-feature");
-    let stale_path = dir.path.join("repo-stale");
-    fs::create_dir_all(&repo_path).unwrap();
-    let repo = init_repo(&repo_path);
-    let oid = repo.head().unwrap().target().unwrap();
+    let repo_path = dir.join("repo");
+    let repo = init_repo_at(&repo_path);
+    let oid = commit_file(&repo, "file.txt", "hello\n", "initial");
 
-    create_worktree(&repo, "feature", &locked_path, oid).unwrap();
+    create_worktree(&repo, "feature", &dir.join("repo-feature"), oid).unwrap();
     lock_worktree(&repo, "feature", Some("keep it")).unwrap();
 
     let locked_entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
@@ -215,6 +154,7 @@ fn reports_lock_reason_and_prunability_for_stale_worktrees() {
     remove_worktree(&repo, "feature").unwrap();
     assert!(repo.find_worktree("feature").is_err());
 
+    let stale_path = dir.join("repo-stale");
     create_worktree(&repo, "stale", &stale_path, oid).unwrap();
     fs::remove_dir_all(&stale_path).unwrap();
 
