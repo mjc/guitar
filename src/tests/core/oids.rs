@@ -177,15 +177,17 @@ fn reserve_aliases_preallocates_sorted_aliases() {
     oids.reserve_aliases(256);
 
     assert!(oids.sorted_aliases.capacity() >= 257);
+    assert!(oids.alias_oids.capacity() >= 256);
 }
 
 #[test]
-fn reserve_total_aliases_preallocates_sorted_aliases_only() {
+fn reserve_total_aliases_preallocates_dense_alias_storage_only() {
     let mut oids = Oids::default();
 
     oids.reserve_total_aliases(256);
 
     assert!(oids.sorted_aliases.capacity() >= 257);
+    assert!(oids.alias_oids.capacity() >= 256);
     assert_eq!(oids.capacity(), 0);
 }
 

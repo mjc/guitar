@@ -1,7 +1,7 @@
 use crate::core::chunk::NONE;
 use git2::Oid;
 use gix::ObjectId;
-use iddqd::{BiHashItem, BiHashMap, bi_upcast};
+use iddqd::{IdHashItem, IdHashMap, id_upcast};
 
 pub trait IntoGixOid {
     fn into_gix_oid(self) -> ObjectId;
@@ -35,36 +35,31 @@ pub fn gix_to_git2_oid(oid: gix::ObjectId) -> Oid {
 #[derive(Clone)]
 pub struct Oids {
     pub zero: ObjectId,
-    records: BiHashMap<OidRecord>,
-    next_alias: u32,
+    records: IdHashMap<OidRecord>,
+    alias_oids: Vec<ObjectId>,
     pub sorted_aliases: Vec<u32>,
     pub stashes: Vec<u32>,
 }
 
 #[derive(Clone, Debug)]
 struct OidRecord {
-    alias: u32,
     oid: ObjectId,
+    alias: u32,
 }
 
-impl BiHashItem for OidRecord {
-    type K1<'a> = u32;
-    type K2<'a> = &'a ObjectId;
+impl IdHashItem for OidRecord {
+    type Key<'a> = &'a ObjectId;
 
-    fn key1(&self) -> Self::K1<'_> {
-        self.alias
-    }
-
-    fn key2(&self) -> Self::K2<'_> {
+    fn key(&self) -> Self::Key<'_> {
         &self.oid
     }
 
-    bi_upcast!();
+    id_upcast!();
 }
 
 impl Default for Oids {
     fn default() -> Self {
-        Oids { zero: ObjectId::null(gix::hash::Kind::Sha1), records: BiHashMap::default(), next_alias: 0, sorted_aliases: vec![NONE], stashes: vec![] }
+        Oids { zero: ObjectId::null(gix::hash::Kind::Sha1), records: IdHashMap::default(), alias_oids: Vec::new(), sorted_aliases: vec![NONE], stashes: vec![] }
     }
 }
 
@@ -75,6 +70,11 @@ impl Oids {
         if sorted_target > self.sorted_aliases.len() + sorted_spare {
             self.sorted_aliases.reserve(sorted_target - self.sorted_aliases.len() - sorted_spare);
         }
+
+        let alias_spare = self.alias_oids.capacity().saturating_sub(self.alias_oids.len());
+        if total > self.alias_oids.len() + alias_spare {
+            self.alias_oids.reserve(total - self.alias_oids.len() - alias_spare);
+        }
     }
 
     pub fn reserve_aliases(&mut self, additional: usize) {
@@ -82,34 +82,37 @@ impl Oids {
         if additional > sorted_spare {
             self.sorted_aliases.reserve(additional - sorted_spare);
         }
+
+        let alias_spare = self.alias_oids.capacity().saturating_sub(self.alias_oids.len());
+        if additional > alias_spare {
+            self.alias_oids.reserve(additional - alias_spare);
+        }
     }
 
-    pub fn compact_alias_index(&mut self) {
-        self.records.shrink_to_fit();
-    }
+    pub fn compact_alias_index(&mut self) {}
 
     pub fn shrink_to_fit(&mut self) {
-        self.records.shrink_to_fit();
+        self.alias_oids.shrink_to_fit();
         self.sorted_aliases.shrink_to_fit();
         self.stashes.shrink_to_fit();
     }
 
     pub fn get_alias_by_oid(&mut self, oid: impl IntoGixOid) -> u32 {
         let oid = oid.into_gix_oid();
-        if let Some(record) = self.records.get2(&oid) {
+        if let Some(record) = self.records.get(&oid) {
             return record.alias;
         }
 
-        let alias = self.next_alias;
-        self.next_alias = self.next_alias.checked_add(1).expect("OID alias space exhausted");
-        self.records.insert_unique(OidRecord { alias, oid }).expect("new OID record has unique alias and OID");
+        let alias = u32::try_from(self.alias_oids.len()).expect("OID alias space exhausted");
+        self.alias_oids.push(oid);
+        self.records.insert_unique(OidRecord { oid, alias }).expect("new OID record has unique OID");
 
         alias
     }
 
     pub fn get_existing_alias(&self, oid: impl IntoGixOid) -> Option<u32> {
         let oid = oid.into_gix_oid();
-        self.records.get2(&oid).map(|record| record.alias)
+        self.records.get(&oid).map(|record| record.alias)
     }
 
     pub fn get_alias_by_idx(&self, idx: usize) -> u32 {
@@ -117,7 +120,7 @@ impl Oids {
     }
 
     pub fn get_oid_by_alias(&self, alias: u32) -> &ObjectId {
-        self.records.get1(&alias).map_or(&self.zero, |record| &record.oid)
+        self.alias_oids.get(alias as usize).unwrap_or(&self.zero)
     }
 
     pub fn get_git2_oid_by_alias(&self, alias: u32) -> Oid {
@@ -137,7 +140,7 @@ impl Oids {
     }
 
     pub fn len(&self) -> usize {
-        self.records.len()
+        self.alias_oids.len()
     }
 
     pub fn capacity(&self) -> usize {
@@ -145,11 +148,11 @@ impl Oids {
     }
 
     pub fn iter_oids(&self) -> impl Iterator<Item = &ObjectId> {
-        self.records.iter().map(|record| &record.oid)
+        self.alias_oids.iter()
     }
 
     pub fn get_alias_by_prefix(&self, prefix: &str) -> Option<u32> {
-        self.records.iter().find(|record| oid_starts_with_hex_prefix(&record.oid, prefix)).map(|record| record.alias)
+        self.alias_oids.iter().position(|oid| oid_starts_with_hex_prefix(oid, prefix)).and_then(|alias| u32::try_from(alias).ok())
     }
 
     pub fn is_zero(&self, oid: &ObjectId) -> bool {
