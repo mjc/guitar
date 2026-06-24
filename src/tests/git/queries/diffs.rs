@@ -179,9 +179,8 @@ fn workdir_file_diff_emits_untracked_file_contents_as_added_lines() {
     let _ = fs::remove_dir_all(path);
 }
 
-#[test]
-fn workdir_diff_lists_file_statuses_without_requerying_paths() {
-    let (path, repo) = temp_repo("ordinary-statuses");
+fn status_matrix_repo(name: &str) -> (PathBuf, Repository) {
+    let (path, repo) = temp_repo(name);
     write(&path, "staged.txt", "base\n");
     commit(&repo, "staged.txt", "staged base");
     write(&path, "unstaged.txt", "base\n");
@@ -195,58 +194,38 @@ fn workdir_diff_lists_file_statuses_without_requerying_paths() {
     fs::remove_file(path.join("deleted.txt")).unwrap();
     write(&path, "new.txt", "new\n");
 
-    let changes = get_filenames_diff_at_workdir(&repo).unwrap();
-
-    assert_contains_path(&changes.staged.modified, "staged.txt");
-    assert_contains_path(&changes.unstaged.modified, "unstaged.txt");
-    assert_contains_path(&changes.unstaged.deleted, "deleted.txt");
-    assert_contains_path(&changes.unstaged.added, "new.txt");
-    assert_eq!(changes.modified_count, 2);
-    assert_eq!(changes.added_count, 1);
-    assert_eq!(changes.deleted_count, 1);
-    assert!(changes.is_staged);
-    assert!(changes.is_unstaged);
-
-    let _ = fs::remove_dir_all(path);
+    (path, repo)
 }
 
 #[test]
-fn staged_diff_lists_only_index_changes_without_worktree_rows() {
-    let (path, repo) = temp_repo("staged-only-status");
-    write(&path, "staged.txt", "base\n");
-    commit(&repo, "staged.txt", "staged base");
-    write(&path, "unstaged.txt", "base\n");
-    commit(&repo, "unstaged.txt", "unstaged base");
-    write(&path, "deleted.txt", "base\n");
-    commit(&repo, "deleted.txt", "deleted base");
+fn workdir_and_staged_diffs_share_the_status_matrix_without_requerying_paths() {
+    let (path, repo) = status_matrix_repo("ordinary-statuses");
 
-    write(&path, "staged.txt", "staged\n");
-    stage(&repo, "staged.txt");
-    write(&path, "unstaged.txt", "unstaged\n");
-    fs::remove_file(path.join("deleted.txt")).unwrap();
-    write(&path, "new.txt", "new\n");
+    let workdir = get_filenames_diff_at_workdir(&repo).unwrap();
+    let staged = get_staged_filenames_diff(&repo).unwrap();
+    let staged_from_path = get_staged_filenames_diff_from_path(&path).unwrap();
 
-    let changes = get_staged_filenames_diff(&repo).unwrap();
-    let path_changes = get_staged_filenames_diff_from_path(&path).unwrap();
+    assert_contains_path(&workdir.staged.modified, "staged.txt");
+    assert_contains_path(&workdir.unstaged.modified, "unstaged.txt");
+    assert_contains_path(&workdir.unstaged.deleted, "deleted.txt");
+    assert_contains_path(&workdir.unstaged.added, "new.txt");
+    assert_eq!(workdir.modified_count, 2);
+    assert_eq!(workdir.added_count, 1);
+    assert_eq!(workdir.deleted_count, 1);
+    assert!(workdir.is_staged);
+    assert!(workdir.is_unstaged);
 
-    assert_contains_path(&changes.staged.modified, "staged.txt");
-    assert_contains_path(&path_changes.staged.modified, "staged.txt");
-    assert!(changes.unstaged.modified.is_empty());
-    assert!(path_changes.unstaged.modified.is_empty());
-    assert!(changes.unstaged.deleted.is_empty());
-    assert!(path_changes.unstaged.deleted.is_empty());
-    assert!(changes.unstaged.added.is_empty());
-    assert!(path_changes.unstaged.added.is_empty());
-    assert_eq!(changes.modified_count, 1);
-    assert_eq!(path_changes.modified_count, 1);
-    assert_eq!(changes.added_count, 0);
-    assert_eq!(path_changes.added_count, 0);
-    assert_eq!(changes.deleted_count, 0);
-    assert_eq!(path_changes.deleted_count, 0);
-    assert!(changes.is_staged);
-    assert!(path_changes.is_staged);
-    assert!(!changes.is_unstaged);
-    assert!(!path_changes.is_unstaged);
+    for changes in [&staged, &staged_from_path] {
+        assert_contains_path(&changes.staged.modified, "staged.txt");
+        assert!(changes.unstaged.modified.is_empty());
+        assert!(changes.unstaged.deleted.is_empty());
+        assert!(changes.unstaged.added.is_empty());
+        assert_eq!(changes.modified_count, 1);
+        assert_eq!(changes.added_count, 0);
+        assert_eq!(changes.deleted_count, 0);
+        assert!(changes.is_staged);
+        assert!(!changes.is_unstaged);
+    }
 
     let _ = fs::remove_dir_all(path);
 }
