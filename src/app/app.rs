@@ -112,11 +112,6 @@ impl RepoHandle {
         Ok(repo)
     }
 
-    #[cfg(test)]
-    pub fn is_git2_open(&self) -> bool {
-        self.git2.get().is_some()
-    }
-
     pub fn git_dir(&self) -> Option<PathBuf> {
         self.git2().ok().map(|repo| repo.path().to_path_buf())
     }

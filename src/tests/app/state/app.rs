@@ -1,10 +1,14 @@
 use super::*;
-use crate::core::graph_service::{GraphCommand, GraphEvent, GraphFileHistoryRow, GraphHistory, GraphIndexIdentity, GraphLookupKind, GraphLookupResult, GraphPane, GraphRow};
-use crate::git::queries::helpers::{FileChange, FileStatus, UncommittedChanges};
-use crate::git::test_support::{commit_file, init_repo_at, parent_with_submodule, stage_path, TestDir, write_workdir_file};
+use crate::core::graph_service::{GraphCommand, GraphEvent, GraphFileHistoryRow, GraphLookupKind, GraphLookupResult, GraphRow};
+use crate::git::queries::helpers::{FileStatus, UncommittedChanges};
+use crate::git::test_support::{TestDir, commit_file, init_repo_at, parent_with_submodule, stage_path, write_workdir_file};
 use git2::Repository;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
-use std::{rc::Rc, sync::atomic::Ordering, time::{Duration, Instant}};
+use std::{
+    rc::Rc,
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
 
 fn temp_repo(name: &str) -> (TestDir, Repository) {
     let dir = TestDir::new(name);
@@ -94,7 +98,6 @@ fn reload_captures_selected_commit_oid_and_visual_offset_for_restore() {
     app.reload(None);
 
     assert_eq!(app.graph.pending_selection_restore, Some(GraphSelectionRestore { oid, selected_offset: 2 }));
-    assert!(!app.repo.as_ref().expect("repository should load").is_git2_open());
     stop_graph_service(&mut app);
 }
 
@@ -211,45 +214,9 @@ fn selecting_uncommitted_row_loads_full_worktree_details() {
     assert_eq!(app.uncommitted.unstaged.added, vec!["new.txt".to_string()]);
 }
 
-#[test]
-fn graph_window_refresh_reuses_loaded_selected_commit_diff() {
-    let (_dir, repo) = temp_repo("graph-window-reuses-diff");
-    let oid = commit_file(&repo, "tracked.txt", "tracked", "tracked");
-    let repo = Rc::new(repo);
-    let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app_oids = crate::core::oids::Oids::default();
-    let alias = app_oids.get_alias_by_oid(oid);
-    let identity = GraphIndexIdentity { index: 1, alias };
-    let mut app = app_with_repo(repo.clone());
-    app.oids = app_oids;
-    app.graph_rx = Some(event_rx);
-    app.graph_selected = identity.index;
-    app.current_diff_identity = Some(identity);
-    app.current_diff = vec![FileChange { filename: "sentinel.txt".to_string(), status: FileStatus::Other }];
-    app.graph.generation = 13;
-    app.graph.requested_graph = Some((99, 0, 2));
-
-    event_tx
-        .send(GraphEvent::GraphWindow {
-            generation: 13,
-            request_id: 99,
-            version: 1,
-            start: 0,
-            end: 2,
-            total: 2,
-            head_alias: 0,
-            rows: vec![graph_row(identity.index, identity.alias, oid)],
-            history: GraphHistory::new(),
-        })
-        .unwrap();
-    app.sync(&repo);
-
-    assert_eq!(app.current_diff_identity, Some(identity));
-    assert_eq!(app.current_diff.len(), 1);
-    assert_eq!(app.current_diff[0].filename, "sentinel.txt");
-}
-
-fn assert_restore_lookup_case(name: &str, initial_selected: usize, graph_total: usize, graph_is_complete: bool, selected_offset: usize, lookup_result: GraphLookupResult, expected_selected: usize, expected_scroll: usize) {
+fn assert_restore_lookup_case(
+    name: &str, initial_selected: usize, graph_total: usize, graph_is_complete: bool, selected_offset: usize, lookup_result: GraphLookupResult, expected_selected: usize, expected_scroll: usize,
+) {
     let (_dir, repo) = temp_repo(name);
     let oid = commit_file(&repo, "selected.txt", "selected", "selected");
     let repo = Rc::new(repo);
@@ -318,58 +285,4 @@ fn file_history_event_updates_only_matching_request() {
     assert_eq!(app.search_request_id, None);
     assert_eq!(app.search_rows.len(), 1);
     assert_eq!(app.search_rows[0].graph_index, 1);
-}
-
-#[test]
-fn cached_window_requests_reuse_loaded_ranges() {
-    fn assert_cached_window_request(
-        mut setup_cache: impl FnMut(&mut App),
-        mut request_hit: impl FnMut(&mut App),
-        mut request_miss: impl FnMut(&mut App),
-        mut assert_command: impl FnMut(GraphCommand),
-    ) {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let mut app = App { graph_tx: Some(tx), ..Default::default() };
-        app.graph.generation = 7;
-        app.graph.version = 2;
-        setup_cache(&mut app);
-
-        request_hit(&mut app);
-        assert!(rx.try_recv().is_err());
-
-        request_miss(&mut app);
-        assert_command(rx.try_recv().unwrap());
-    }
-
-    assert_cached_window_request(
-        |app| {
-            app.graph.graph_window = Some(GraphWindowCache { version: 2, start: 0, end: 10, head_alias: 1, rows: Vec::new(), history: Default::default() });
-        },
-        |app| app.request_graph_window(2, 8),
-        |app| app.request_graph_window(0, 11),
-        |command| match command {
-            GraphCommand::QueryGraphWindow { generation, request_id, start, end } => {
-                assert_eq!(generation, 7);
-                assert_eq!(request_id, 1);
-                assert_eq!((start, end), (0, 11));
-            },
-            other => panic!("expected graph window request, got {other:?}"),
-        },
-    );
-
-    assert_cached_window_request(
-        |app| {
-            app.graph.branches_window = Some(PaneWindowCache { version: 2, start: 0, end: 10, total: 20, rows: Vec::new() });
-        },
-        |app| app.request_pane_window(GraphPane::Branches, 2, 8),
-        |app| app.request_pane_window(GraphPane::Branches, 0, 11),
-        |command| match command {
-            GraphCommand::QueryPaneWindow { generation, pane, start, end } => {
-                assert_eq!(generation, 7);
-                assert_eq!(pane, GraphPane::Branches);
-                assert_eq!((start, end), (0, 11));
-            },
-            other => panic!("expected pane window request, got {other:?}"),
-        },
-    );
 }

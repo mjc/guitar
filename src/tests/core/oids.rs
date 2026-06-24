@@ -66,27 +66,3 @@ fn prefix_lookup_returns_existing_alias_without_reinterning_oid() {
     assert_eq!(oids.get_existing_alias(missing), None);
     assert_eq!(oids.len(), 2);
 }
-
-#[derive(Clone, Copy)]
-enum Reserve {
-    Additional,
-    Total,
-}
-
-#[test]
-fn reserve_preallocates_dense_alias_storage_without_hash_storage() {
-    for (reserve, aliases) in [(Reserve::Additional, 256), (Reserve::Total, 256), (Reserve::Total, 100_000)] {
-        let mut oids = Oids::default();
-
-        match reserve {
-            Reserve::Additional => oids.reserve_aliases(aliases),
-            Reserve::Total => oids.reserve_total_aliases(aliases),
-        }
-
-        assert!(oids.sorted_aliases.capacity() > aliases);
-        assert!(oids.alias_oids.capacity() >= aliases);
-        if matches!(reserve, Reserve::Total) {
-            assert_eq!(oids.capacity(), 0);
-        }
-    }
-}

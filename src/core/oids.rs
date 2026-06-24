@@ -141,10 +141,6 @@ impl Oids {
         self.alias_oids.len()
     }
 
-    pub fn capacity(&self) -> usize {
-        self.records.capacity()
-    }
-
     pub fn iter_oids(&self) -> impl Iterator<Item = &ObjectId> {
         self.alias_oids.iter()
     }

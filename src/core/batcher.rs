@@ -348,8 +348,8 @@ mod tests {
         core::oids::{IntoGixOid, Oids, git2_to_gix_oid},
         git::test_support::{TestDir, commit_file, create_branch, init_repo_at},
     };
-    use im::HashSet;
     use git2::{BranchType, Commit, Oid, Repository};
+    use im::HashSet;
     use std::{collections::HashSet as StdHashSet, fs, path::Path};
 
     fn temp_repo(name: &str) -> (TestDir, Repository) {

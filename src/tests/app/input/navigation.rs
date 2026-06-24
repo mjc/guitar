@@ -168,15 +168,7 @@ fn move_recent_repository_down(app: &mut App) {
 }
 
 fn assert_splash_recent_case(
-    name: &str,
-    mut app: App,
-    path: PathBuf,
-    action: fn(&mut App),
-    expected_recent: &[&str],
-    expected_selected: usize,
-    expect_saved: bool,
-    expected_path: Option<&str>,
-    expect_repo_open: bool,
+    name: &str, mut app: App, path: PathBuf, action: fn(&mut App), expected_recent: &[&str], expected_selected: usize, expect_saved: bool, expected_path: Option<&str>, expect_repo_open: bool,
 ) {
     action(&mut app);
     assert_eq!(app.recent, recent_strings(expected_recent), "{name}");
@@ -192,15 +184,7 @@ fn assert_splash_recent_case(
     }
 }
 
-fn assert_settings_recent_case(
-    name: &str,
-    mut app: App,
-    path: PathBuf,
-    action: fn(&mut App),
-    expected_recent: &[&str],
-    expected_selected: usize,
-    expect_saved: bool,
-) {
+fn assert_settings_recent_case(name: &str, mut app: App, path: PathBuf, action: fn(&mut App), expected_recent: &[&str], expected_selected: usize, expect_saved: bool) {
     action(&mut app);
     assert_eq!(app.recent, recent_strings(expected_recent), "{name}");
     assert_eq!(app.settings_selected, expected_selected, "{name}");
@@ -616,12 +600,7 @@ fn search_narrow_jumps_to_related_graph_commit() {
 fn empty_recent_splash_scrolls_keep_selection_at_zero() {
     let mut app = App { viewport: Viewport::Splash, focus: Focus::Viewport, ..Default::default() };
     app.layout.graph.height = 10;
-    let actions: [fn(&mut App); 4] = [
-        App::on_scroll_down,
-        App::on_scroll_page_down,
-        App::on_scroll_half_page_down,
-        App::on_scroll_to_end,
-    ];
+    let actions: [fn(&mut App); 4] = [App::on_scroll_down, App::on_scroll_page_down, App::on_scroll_half_page_down, App::on_scroll_to_end];
 
     for action in actions {
         app.splash_selected = 3;
@@ -1282,36 +1261,20 @@ fn escape_cases_cover_key_capture_modal_resets_and_progress() {
         },
     );
 
-    assert_esc_case(
-        "checkout-modal-esc",
-        App { focus: Focus::ModalCheckout, modal_checkout_selected: 3, ..Default::default() },
-        Focus::Viewport,
-        |app| assert_eq!(app.modal_checkout_selected, 0),
-    );
+    assert_esc_case("checkout-modal-esc", App { focus: Focus::ModalCheckout, modal_checkout_selected: 3, ..Default::default() }, Focus::Viewport, |app| assert_eq!(app.modal_checkout_selected, 0));
 
-    assert_esc_case(
-        "solo-modal-esc",
-        App { focus: Focus::ModalSolo, modal_solo_selected: 2, modal_branch_action: BranchModalAction::Rename, ..Default::default() },
-        Focus::Viewport,
-        |app| {
-            assert_eq!(app.modal_solo_selected, 0);
-            assert_eq!(app.modal_branch_action, BranchModalAction::Solo);
-        },
-    );
+    assert_esc_case("solo-modal-esc", App { focus: Focus::ModalSolo, modal_solo_selected: 2, modal_branch_action: BranchModalAction::Rename, ..Default::default() }, Focus::Viewport, |app| {
+        assert_eq!(app.modal_solo_selected, 0);
+        assert_eq!(app.modal_branch_action, BranchModalAction::Solo);
+    });
 
-    assert_esc_case(
-        "delete-branch-modal-esc",
-        App { focus: Focus::ModalDeleteBranch, modal_delete_branch_selected: 4, ..Default::default() },
-        Focus::Viewport,
-        |app| assert_eq!(app.modal_delete_branch_selected, 0),
-    );
+    assert_esc_case("delete-branch-modal-esc", App { focus: Focus::ModalDeleteBranch, modal_delete_branch_selected: 4, ..Default::default() }, Focus::Viewport, |app| {
+        assert_eq!(app.modal_delete_branch_selected, 0)
+    });
 
-    assert_esc_case(
-        "delete-tag-modal-esc",
-        App { focus: Focus::ModalDeleteTag, modal_delete_tag_selected: 5, ..Default::default() },
-        Focus::Viewport,
-        |app| assert_eq!(app.modal_delete_tag_selected, 0),
-    );
+    assert_esc_case("delete-tag-modal-esc", App { focus: Focus::ModalDeleteTag, modal_delete_tag_selected: 5, ..Default::default() }, Focus::Viewport, |app| {
+        assert_eq!(app.modal_delete_tag_selected, 0)
+    });
 
     assert_esc_case(
         "remote-action-modal-esc",
@@ -1333,19 +1296,9 @@ fn escape_cases_cover_key_capture_modal_resets_and_progress() {
         },
     );
 
-    assert_esc_case(
-        "live-progress-modal-esc",
-        App { focus: Focus::ModalNetworkProgress, ..Default::default() },
-        Focus::ModalNetworkProgress,
-        |_| {},
-    );
+    assert_esc_case("live-progress-modal-esc", App { focus: Focus::ModalNetworkProgress, ..Default::default() }, Focus::ModalNetworkProgress, |_| {});
 
-    assert_esc_case(
-        "operation-progress-modal-esc",
-        App { focus: Focus::ModalOperationProgress, ..Default::default() },
-        Focus::ModalOperationProgress,
-        |_| {},
-    );
+    assert_esc_case("operation-progress-modal-esc", App { focus: Focus::ModalOperationProgress, ..Default::default() }, Focus::ModalOperationProgress, |_| {});
 }
 
 #[test]

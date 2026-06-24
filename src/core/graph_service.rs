@@ -174,11 +174,6 @@ impl CommitMetadataCache {
         self.entries.insert(alias, metadata.clone());
         metadata
     }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.entries.len()
-    }
 }
 
 #[derive(Clone, Debug)]

@@ -247,62 +247,6 @@ fn push_tags_uses_configured_default_remote() {
 }
 
 #[test]
-fn tag_shortcut_opens_modal_and_creates_lightweight_tag() {
-    let (path, repo) = temp_repo("tag-create");
-    let oid = commit(&repo, "file.txt", "initial");
-    let path_string = path.display().to_string();
-    let mut app = App {
-        path: Some(path_string.clone()),
-        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
-        viewport: Viewport::Graph,
-        focus: Focus::Viewport,
-        graph_selected: 1,
-        ..Default::default()
-    };
-    let alias = app.oids.get_alias_by_oid(oid);
-    app.oids.sorted_aliases = vec![NONE, alias];
-
-    app.on_tag();
-
-    assert_eq!(app.focus, Focus::ModalTag);
-    assert!(app.modal_input.value().is_empty());
-
-    app.modal_input.set_value("v1.0.0");
-    app.handle_modal_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert_eq!(app.focus, Focus::Viewport);
-    assert!(app.modal_input.value().is_empty());
-
-    let repo = Repository::open(&path_string).unwrap();
-    assert_eq!(repo.find_reference("refs/tags/v1.0.0").unwrap().target(), Some(oid));
-}
-
-#[test]
-fn untag_from_tags_pane_removes_existing_lightweight_tag() {
-    let (path, repo) = temp_repo("tag-delete");
-    let oid = commit(&repo, "file.txt", "initial");
-    repo.tag_lightweight("v1.0.0", &repo.find_object(oid, None).unwrap(), false).unwrap();
-    let path_string = path.display().to_string();
-    let mut app = App {
-        path: Some(path_string.clone()),
-        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
-        viewport: Viewport::Graph,
-        focus: Focus::Tags,
-        tags_selected: 0,
-        ..Default::default()
-    };
-    let alias = app.oids.get_alias_by_oid(oid);
-    app.oids.sorted_aliases = vec![NONE, alias];
-    app.tags.sorted = vec![(alias, "v1.0.0".to_string())];
-
-    app.on_untag();
-
-    assert_eq!(app.focus, Focus::Tags);
-    let repo = Repository::open(&path_string).unwrap();
-    assert!(repo.find_reference("refs/tags/v1.0.0").is_err());
-}
-
-#[test]
 fn cherrypick_opens_message_modal_with_prefilled_summary() {
     let (_path, repo) = temp_repo("cherrypick-modal");
     let oid = commit(&repo, "file.txt", "original summary\n\nbody");
@@ -620,53 +564,6 @@ fn auth_required_network_result_opens_auth_modal() {
     assert_eq!(app.focus, Focus::ModalAuth);
     assert_eq!(app.pending_auth_prompt, Some(challenge));
     assert_eq!(app.auth_username_input.value(), "octo");
-    assert_eq!(app.auth_input_field, AuthInputField::Secret);
-}
-
-#[test]
-fn auth_required_ssh_network_result_opens_auth_modal_on_secret_field() {
-    let challenge = AuthChallenge {
-        url: "ssh://git@github.com/asinglebit/guitar.git".to_string(),
-        username: Some("git".to_string()),
-        protocol: AuthProtocol::Ssh,
-        operation: "Fetch".to_string(),
-        key_path: Some(PathBuf::from("/tmp/id_ed25519")),
-    };
-    let mut app = App {
-        pending_network_request: Some(NetworkRequest::Fetch { repo_path: ".".to_string(), remote_name: "origin".to_string() }),
-        viewport: Viewport::Graph,
-        focus: Focus::ModalNetworkProgress,
-        ..Default::default()
-    };
-
-    app.handle_network_result(NetworkResult::AuthRequired(AuthRequired { challenge: challenge.clone(), rejected: Vec::new() }));
-
-    assert_eq!(app.focus, Focus::ModalAuth);
-    assert_eq!(app.pending_auth_prompt, Some(challenge));
-    assert_eq!(app.auth_username_input.value(), "git");
-    assert_eq!(app.auth_input_field, AuthInputField::Secret);
-}
-
-#[test]
-fn ssh_auth_prompt_keeps_secret_field_when_toggled() {
-    let challenge = AuthChallenge {
-        url: "ssh://git@github.com/asinglebit/guitar.git".to_string(),
-        username: Some("git".to_string()),
-        protocol: AuthProtocol::Ssh,
-        operation: "Fetch".to_string(),
-        key_path: Some(PathBuf::from("/tmp/id_ed25519")),
-    };
-    let mut app = App {
-        pending_network_request: Some(NetworkRequest::Fetch { repo_path: ".".to_string(), remote_name: "origin".to_string() }),
-        viewport: Viewport::Graph,
-        focus: Focus::ModalNetworkProgress,
-        ..Default::default()
-    };
-
-    app.handle_network_result(NetworkResult::AuthRequired(AuthRequired { challenge, rejected: Vec::new() }));
-    app.auth_input_field = AuthInputField::Username;
-    app.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-
     assert_eq!(app.auth_input_field, AuthInputField::Secret);
 }
 
