@@ -101,6 +101,19 @@ pub fn add_remote_url(repo: &Repository, name: &str, remote_url: &str) {
     repo.remote(name, remote_url).unwrap();
 }
 
+pub fn seed_remote(repo: &Repository, remote_name: &str, refspecs: &[&str]) {
+    let mut remote = repo.find_remote(remote_name).unwrap();
+    remote.push(refspecs, None).unwrap();
+}
+
+pub fn source_with_origin(dir: &TestDir) -> (Repository, PathBuf) {
+    let source = init_repo_at(&dir.join("source"));
+    let remote_path = dir.join("remote.git");
+    init_bare_repo_at(&remote_path);
+    add_remote_path(&source, "origin", &remote_path);
+    (source, remote_path)
+}
+
 pub fn parent_with_submodule(dir: &TestDir) -> (Repository, PathBuf) {
     let child_path = dir.join("child");
     let parent_path = dir.join("parent");

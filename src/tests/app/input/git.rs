@@ -189,14 +189,20 @@ fn status_panes_stage_and_unstage_submodule_pointer_change() {
     assert_eq!(unstaged.unstaged.modified, vec!["deps/child".to_string()]);
 }
 
-#[test]
-fn fetch_all_uses_configured_default_remote() {
-    let (path, repo) = temp_repo("fetch-default-remote");
+fn app_with_default_remote(name: &str) -> (App, String, String) {
+    let (path, repo) = temp_repo(name);
     commit(&repo, "file.txt", "initial");
     let _remote_path = add_local_bare_remote(&repo, "upstream");
     set_default_remote(&repo, "upstream").unwrap();
+    let branch = current_branch_name(&repo);
     let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let app = App { path: Some(path_string.clone()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    (app, path_string, branch)
+}
+
+#[test]
+fn fetch_all_uses_configured_default_remote() {
+    let (mut app, path_string, _) = app_with_default_remote("fetch-default-remote");
 
     app.on_fetch_all();
 
@@ -206,13 +212,7 @@ fn fetch_all_uses_configured_default_remote() {
 
 #[test]
 fn force_push_uses_configured_default_remote() {
-    let (path, repo) = temp_repo("push-default-remote");
-    commit(&repo, "file.txt", "initial");
-    let _remote_path = add_local_bare_remote(&repo, "upstream");
-    set_default_remote(&repo, "upstream").unwrap();
-    let branch = current_branch_name(&repo);
-    let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let (mut app, path_string, branch) = app_with_default_remote("push-default-remote");
 
     app.on_force_push();
 
@@ -222,12 +222,7 @@ fn force_push_uses_configured_default_remote() {
 
 #[test]
 fn push_tags_uses_configured_default_remote() {
-    let (path, repo) = temp_repo("push-tags-default-remote");
-    commit(&repo, "file.txt", "initial");
-    let _remote_path = add_local_bare_remote(&repo, "upstream");
-    set_default_remote(&repo, "upstream").unwrap();
-    let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let (mut app, path_string, _) = app_with_default_remote("push-tags-default-remote");
 
     app.on_push_tags();
 
