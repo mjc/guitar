@@ -76,28 +76,10 @@ fn buffer_window_replay_large(bencher: Bencher) {
 }
 
 #[divan::bench(sample_count = 30, sample_size = 10)]
-fn buffer_window_replay_late_large(bencher: Bencher) {
-    let fixture = buffer_checkpoint_fixture(100_000);
-    let start = fixture.buffer.deltas.len().saturating_sub(1_000);
-    let end = fixture.buffer.deltas.len();
-
-    bencher.counter(divan::counter::ItemsCount::new(end - start)).bench(|| black_box(fixture.buffer.window(start, end)));
-}
-
-#[divan::bench(sample_count = 30, sample_size = 10)]
-fn buffer_window_replay_late_medium(bencher: Bencher) {
+fn buffer_window_replay_late_checkpoint_medium(bencher: Bencher) {
     let fixture = buffer_checkpoint_fixture(20_000);
     let start = fixture.buffer.deltas.len().saturating_sub(1_000);
     let end = fixture.buffer.deltas.len();
-
-    bencher.counter(divan::counter::ItemsCount::new(end - start)).bench(|| black_box(fixture.buffer.window(start, end)));
-}
-
-#[divan::bench(sample_count = 30, sample_size = 10)]
-fn buffer_window_replay_wide_checkpoint_large(bencher: Bencher) {
-    let fixture = buffer_checkpoint_fixture(100_000);
-    let end = fixture.buffer.deltas.len();
-    let start = end.saturating_sub(4_096);
 
     bencher.counter(divan::counter::ItemsCount::new(end - start)).bench(|| black_box(fixture.buffer.window(start, end)));
 }
