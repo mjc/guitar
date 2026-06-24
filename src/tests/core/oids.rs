@@ -18,7 +18,7 @@ fn aliases_are_stable_for_repeated_oid() {
 
     assert_eq!(first, second);
     assert_eq!(oids.get_git2_oid_by_alias(first), oid);
-    assert_eq!(oids.oids.len(), 1);
+    assert_eq!(oids.len(), 1);
 }
 
 #[test]
@@ -54,19 +54,19 @@ fn aliases_keep_distinct_oids_with_shared_32_bit_fingerprint() {
 }
 
 #[test]
-fn aliases_lookup_across_oid_chunk_boundaries() {
+fn aliases_lookup_across_many_inserted_oids() {
     let mut oids = Oids::default();
     let first = oid_with_prefix(1, 10);
     let boundary = oid_with_prefix(2, 20);
 
     let first_alias = oids.get_alias_by_oid(first);
-    for suffix in 1..OID_CHUNK_SIZE {
+    for suffix in 1..2048 {
         oids.get_alias_by_oid(oid_with_prefix((suffix + 10) as u64, suffix as u64));
     }
     let boundary_alias = oids.get_alias_by_oid(boundary);
 
     assert_eq!(first_alias, 0);
-    assert_eq!(boundary_alias, OID_CHUNK_SIZE as u32);
+    assert_eq!(boundary_alias, 2048);
     assert_eq!(oids.get_git2_oid_by_alias(first_alias), first);
     assert_eq!(oids.get_git2_oid_by_alias(boundary_alias), boundary);
     assert_eq!(oids.get_existing_alias(first), Some(first_alias));
@@ -74,13 +74,13 @@ fn aliases_lookup_across_oid_chunk_boundaries() {
 }
 
 #[test]
-fn collision_lookup_works_across_oid_chunk_boundaries() {
+fn full_oid_lookup_handles_many_shared_fingerprints() {
     let mut oids = Oids::default();
     let first = oid_with_prefix(0xfeed_beef_0000_0001, 10);
     let boundary = oid_with_prefix(0xfeed_beef_ffff_ffff, 20);
 
     let first_alias = oids.get_alias_by_oid(first);
-    for suffix in 1..OID_CHUNK_SIZE {
+    for suffix in 1..2048 {
         oids.get_alias_by_oid(oid_with_prefix((suffix + 10) as u64, suffix as u64));
     }
     let boundary_alias = oids.get_alias_by_oid(boundary);
@@ -154,6 +154,23 @@ fn insertion_after_compaction_rematerializes_hash_index() {
 }
 
 #[test]
+fn prefix_lookup_returns_existing_alias_without_reinterning_oid() {
+    let mut oids = Oids::default();
+    let first = oid_with_prefix(0x1234_5678_0000_0001, 10);
+    let second = oid_with_prefix(0xabcd_5678_0000_0001, 20);
+
+    let first_alias = oids.get_alias_by_oid(first);
+    let second_alias = oids.get_alias_by_oid(second);
+
+    assert_eq!(oids.get_alias_by_prefix("12345678"), Some(first_alias));
+    assert_eq!(oids.get_alias_by_prefix("abcd5678"), Some(second_alias));
+    assert_eq!(oids.get_alias_by_prefix("ABCD5678"), Some(second_alias));
+    assert_eq!(oids.get_alias_by_prefix("ffff"), None);
+    assert_eq!(oids.get_alias_by_prefix("abcdx"), None);
+    assert_eq!(oids.len(), 2);
+}
+
+#[test]
 fn reserve_aliases_preallocates_sorted_aliases() {
     let mut oids = Oids::default();
 
@@ -163,11 +180,21 @@ fn reserve_aliases_preallocates_sorted_aliases() {
 }
 
 #[test]
-fn reserve_total_aliases_preallocates_hash_and_sorted_storage() {
+fn reserve_total_aliases_preallocates_sorted_aliases_only() {
     let mut oids = Oids::default();
 
     oids.reserve_total_aliases(256);
 
     assert!(oids.sorted_aliases.capacity() >= 257);
-    assert!(oids.oids.capacity() >= 256);
+    assert_eq!(oids.capacity(), 0);
+}
+
+#[test]
+fn reserve_total_aliases_does_not_preallocate_hash_storage_for_large_hints() {
+    let mut oids = Oids::default();
+
+    oids.reserve_total_aliases(100_000);
+
+    assert!(oids.sorted_aliases.capacity() >= 100_001);
+    assert_eq!(oids.capacity(), 0);
 }

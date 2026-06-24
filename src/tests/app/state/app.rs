@@ -161,8 +161,15 @@ fn reload_captures_selected_commit_oid_and_visual_offset_for_restore() {
     let (path, repo) = temp_repo("restore-capture");
     let oid = commit_file(&repo, "selected.txt", "selected");
     let path_string = path.display().to_string();
-    let mut app =
-        App { path: Some(path_string.clone()), recent: vec![path_string], repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 4, ..Default::default() };
+    let mut app = App {
+        path: Some(path_string.clone()),
+        recent: vec![path_string],
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        viewport: Viewport::Graph,
+        focus: Focus::Viewport,
+        graph_selected: 4,
+        ..Default::default()
+    };
     app.graph_scroll.set(2);
     app.graph.graph_window = Some(GraphWindowCache { version: 1, start: 4, end: 5, head_alias: 9, rows: vec![graph_row(4, 9, oid)], history: Default::default() });
 
@@ -177,13 +184,34 @@ fn reload_keeps_uncommitted_row_without_restore_lookup() {
     let (path, repo) = temp_repo("restore-uncommitted");
     commit_file(&repo, "head.txt", "head");
     let path_string = path.display().to_string();
-    let mut app =
-        App { path: Some(path_string.clone()), recent: vec![path_string], repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 0, ..Default::default() };
+    let mut app = App {
+        path: Some(path_string.clone()),
+        recent: vec![path_string],
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        viewport: Viewport::Graph,
+        focus: Focus::Viewport,
+        graph_selected: 0,
+        ..Default::default()
+    };
 
     app.reload(None);
 
     assert_eq!(app.graph_selected, 0);
     assert_eq!(app.graph.pending_selection_restore, None);
+    stop_graph_service(&mut app);
+}
+
+#[test]
+fn reload_keeps_git2_repository_lazy() {
+    let (path, repo) = temp_repo("lazy-repo");
+    commit_file(&repo, "head.txt", "head");
+    drop(repo);
+    let mut app = App::default();
+
+    app.reload(Some(path.display().to_string()));
+
+    let repo = app.repo.as_ref().expect("repository should load");
+    assert!(!repo.is_git2_open(), "reload should not eagerly open a libgit2 repository");
     stop_graph_service(&mut app);
 }
 
@@ -194,7 +222,14 @@ fn pending_restore_requests_oid_lookup_on_progress() {
     let repo = Rc::new(repo);
     let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
     let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(repo.clone()), graph_tx: Some(cmd_tx), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App {
+        repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())),
+        graph_tx: Some(cmd_tx),
+        graph_rx: Some(event_rx),
+        viewport: Viewport::Graph,
+        focus: Focus::Viewport,
+        ..Default::default()
+    };
     app.graph.generation = 7;
     app.graph.pending_selection_restore = Some(GraphSelectionRestore { oid, selected_offset: 2 });
 
@@ -222,7 +257,7 @@ fn first_graph_progress_with_dirty_submodule_status_stays_in_graph_view() {
     fs::write(parent.workdir().unwrap().join("deps/child/file.txt"), "dirty\n").unwrap();
     let repo = Rc::new(parent);
     let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(repo.clone()), graph_rx: Some(event_rx), viewport: Viewport::Splash, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())), graph_rx: Some(event_rx), viewport: Viewport::Splash, focus: Focus::Viewport, ..Default::default() };
     app.graph.generation = 9;
 
     event_tx.send(GraphEvent::Progress { generation: 9, version: 1, total: 1, is_first: true, is_complete: false }).unwrap();
@@ -254,7 +289,7 @@ fn uncommitted_metadata_waits_for_complete_graph_progress_without_full_worktree_
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let mut app = App {
         path: Some(path.display().to_string()),
-        repo: Some(repo.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())),
         graph_tx: Some(cmd_tx),
         graph_event_tx: Some(event_tx.clone()),
         graph_rx: Some(event_rx),
@@ -291,7 +326,7 @@ fn selecting_uncommitted_row_loads_full_worktree_details() {
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let mut app = App {
         path: Some(path.display().to_string()),
-        repo: Some(repo.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())),
         graph_tx: Some(cmd_tx),
         graph_event_tx: Some(event_tx),
         graph_rx: Some(event_rx),
@@ -322,9 +357,12 @@ fn graph_window_refresh_reuses_loaded_selected_commit_diff() {
     let oid = commit_file(&repo, "tracked.txt", "tracked");
     let repo = Rc::new(repo);
     let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let identity = GraphIndexIdentity { index: 1, alias: 7, oid };
+    let mut app_oids = crate::core::oids::Oids::default();
+    let alias = app_oids.get_alias_by_oid(oid);
+    let identity = GraphIndexIdentity { index: 1, alias };
     let mut app = App {
-        repo: Some(repo.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())),
+        oids: app_oids,
         graph_rx: Some(event_rx),
         viewport: Viewport::Graph,
         focus: Focus::Viewport,
@@ -345,7 +383,7 @@ fn graph_window_refresh_reuses_loaded_selected_commit_diff() {
             end: 2,
             total: 2,
             head_alias: 0,
-            rows: vec![graph_row(identity.index, identity.alias, identity.oid)],
+            rows: vec![graph_row(identity.index, identity.alias, oid)],
             history: GraphHistory::new(),
         })
         .unwrap();
@@ -362,7 +400,8 @@ fn restore_lookup_success_selects_index_and_preserves_visual_offset() {
     let oid = commit_file(&repo, "selected.txt", "selected");
     let repo = Rc::new(repo);
     let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(repo.clone()), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app =
+        App { repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     app.graph.generation = 7;
     app.graph.total = 10;
     app.graph.pending_selection_restore = Some(GraphSelectionRestore { oid, selected_offset: 2 });
@@ -382,7 +421,8 @@ fn restore_lookup_success_clamps_scroll_offset_near_graph_top() {
     let oid = commit_file(&repo, "selected.txt", "selected");
     let repo = Rc::new(repo);
     let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(repo.clone()), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 6, ..Default::default() };
+    let mut app =
+        App { repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 6, ..Default::default() };
     app.graph.generation = 7;
     app.graph.total = 10;
     app.graph.pending_selection_restore = Some(GraphSelectionRestore { oid, selected_offset: 4 });
@@ -402,7 +442,8 @@ fn restore_lookup_missing_after_completion_clears_pending_restore() {
     let oid = commit_file(&repo, "selected.txt", "selected");
     let repo = Rc::new(repo);
     let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(repo.clone()), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 2, ..Default::default() };
+    let mut app =
+        App { repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 2, ..Default::default() };
     app.graph.generation = 7;
     app.graph.total = 6;
     app.graph.is_complete = true;
@@ -435,7 +476,7 @@ fn file_history_event_updates_only_matching_request() {
     let repo = Rc::new(repo);
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let mut app = App {
-        repo: Some(repo.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())),
         graph_rx: Some(event_rx),
         viewport: Viewport::Graph,
         focus: Focus::Search,

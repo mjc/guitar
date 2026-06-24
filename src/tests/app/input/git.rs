@@ -130,7 +130,7 @@ fn file_search_keymaps() -> crate::helpers::keymap::Keymaps {
 #[test]
 fn shift_f_opens_file_search_modal_from_repo_views() {
     let (_path, repo) = temp_repo("file-search-shortcut");
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Branches, keymaps: file_search_keymaps(), ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Branches, keymaps: file_search_keymaps(), ..Default::default() };
 
     app.handle_key_event(KeyEvent::new(KeyCode::Char('F'), KeyModifiers::SHIFT));
 
@@ -143,11 +143,11 @@ fn file_search_modal_does_not_open_from_splash_or_settings() {
     let (_path, repo) = temp_repo("file-search-blocked");
     let repo = Rc::new(repo);
 
-    let mut splash = App { repo: Some(repo.clone()), viewport: Viewport::Splash, focus: Focus::Viewport, ..Default::default() };
+    let mut splash = App { repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())), viewport: Viewport::Splash, focus: Focus::Viewport, ..Default::default() };
     splash.on_find_file();
     assert_eq!(splash.focus, Focus::Viewport);
 
-    let mut settings = App { repo: Some(repo), viewport: Viewport::Settings, focus: Focus::Viewport, ..Default::default() };
+    let mut settings = App { repo: Some(crate::app::app::RepoHandle::from_repo(repo)), viewport: Viewport::Settings, focus: Focus::Viewport, ..Default::default() };
     settings.on_find_file();
     assert_eq!(settings.focus, Focus::Viewport);
 }
@@ -160,7 +160,7 @@ fn status_panes_stage_and_unstage_submodule_pointer_change() {
 
     let mut app = App {
         path: Some(parent_path.display().to_string()),
-        repo: Some(Rc::new(parent)),
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(parent))),
         viewport: Viewport::Graph,
         focus: Focus::StatusBottom,
         graph_selected: 0,
@@ -196,7 +196,7 @@ fn fetch_all_uses_configured_default_remote() {
     let _remote_path = add_local_bare_remote(&repo, "upstream");
     set_default_remote(&repo, "upstream").unwrap();
     let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { path: Some(path_string.clone()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
 
     app.on_fetch_all();
 
@@ -212,7 +212,7 @@ fn force_push_uses_configured_default_remote() {
     set_default_remote(&repo, "upstream").unwrap();
     let branch = current_branch_name(&repo);
     let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { path: Some(path_string.clone()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
 
     app.on_force_push();
 
@@ -227,7 +227,7 @@ fn push_tags_uses_configured_default_remote() {
     let _remote_path = add_local_bare_remote(&repo, "upstream");
     set_default_remote(&repo, "upstream").unwrap();
     let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { path: Some(path_string.clone()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
 
     app.on_push_tags();
 
@@ -240,7 +240,14 @@ fn tag_shortcut_opens_modal_and_creates_lightweight_tag() {
     let (path, repo) = temp_repo("tag-create");
     let oid = commit(&repo, "file.txt", "initial");
     let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App {
+        path: Some(path_string.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        viewport: Viewport::Graph,
+        focus: Focus::Viewport,
+        graph_selected: 1,
+        ..Default::default()
+    };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
 
@@ -265,7 +272,14 @@ fn untag_from_tags_pane_removes_existing_lightweight_tag() {
     let oid = commit(&repo, "file.txt", "initial");
     repo.tag_lightweight("v1.0.0", &repo.find_object(oid, None).unwrap(), false).unwrap();
     let path_string = path.display().to_string();
-    let mut app = App { path: Some(path_string.clone()), repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Tags, tags_selected: 0, ..Default::default() };
+    let mut app = App {
+        path: Some(path_string.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        viewport: Viewport::Graph,
+        focus: Focus::Tags,
+        tags_selected: 0,
+        ..Default::default()
+    };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
     app.tags.sorted = vec![(alias, "v1.0.0".to_string())];
@@ -282,7 +296,7 @@ fn cherrypick_opens_message_modal_with_prefilled_summary() {
     let (_path, repo) = temp_repo("cherrypick-modal");
     let oid = commit(&repo, "file.txt", "original summary\n\nbody");
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
 
@@ -298,7 +312,7 @@ fn revert_opens_message_modal_with_prefilled_summary() {
     let (_path, repo) = temp_repo("revert-modal");
     let oid = commit(&repo, "file.txt", "original summary\n\nbody");
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
 
@@ -329,7 +343,7 @@ fn revert_rejects_merge_commits_before_opening_modal() {
         repo.commit(Some("HEAD"), &sig, &sig, "merge", &tree, &[&main_commit, &feature_commit]).unwrap()
     };
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(merge);
     app.oids.sorted_aliases = vec![NONE, alias];
 
@@ -345,7 +359,7 @@ fn merge_queues_selected_commit_operation() {
     let (_path, repo) = temp_repo("merge-queue");
     let oid = commit(&repo, "file.txt", "merge target");
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
 
@@ -365,7 +379,7 @@ fn revert_state_routes_continue_and_abort_operations() {
 
     assert_eq!(start_revert(&repo, feature, "reverted: feature").unwrap(), RevertOutcome::Conflict);
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     app.on_revert();
 
     assert_eq!(app.focus, Focus::ModalOperationProgress);
@@ -391,7 +405,7 @@ fn cherrypick_state_routes_continue_and_abort_operations() {
 
     assert_eq!(start_cherrypick(&repo, feature, "cherrypicked: feature").unwrap(), CherrypickOutcome::Conflict);
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     app.on_continue_operation();
 
     assert_eq!(app.focus, Focus::ModalOperationProgress);
@@ -421,7 +435,7 @@ fn rebase_state_routes_continue_and_abort_operations() {
 
     assert_eq!(start_rebase(&repo, main).unwrap(), RebaseOutcome::Conflict);
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     app.on_rebase();
 
     assert_eq!(app.focus, Focus::ModalOperationProgress);
@@ -450,7 +464,7 @@ fn merge_state_routes_continue_and_abort_operations() {
 
     assert_eq!(start_merge(&repo, feature).unwrap(), MergeOutcome::Conflict);
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     app.on_continue_operation();
 
     assert_eq!(app.focus, Focus::ModalOperationProgress);
@@ -473,7 +487,7 @@ fn create_branch_from_reflog_uses_reflog_commit_target() {
     let graph_oid = commit(&repo, "graph.txt", "graph");
     let reflog_oid = commit(&repo, "reflog.txt", "reflog");
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Reflogs, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Reflogs, graph_selected: 1, ..Default::default() };
     let graph_alias = app.oids.get_alias_by_oid(graph_oid);
     let reflog_alias = app.oids.get_alias_by_oid(reflog_oid);
     app.oids.sorted_aliases = vec![NONE, graph_alias, reflog_alias];
@@ -499,7 +513,14 @@ fn create_worktree_from_graph_uses_the_name_for_branch_and_default_path() {
     let path_string = path.display().to_string();
     let expected_path = path.parent().unwrap().join(format!("{}-feature", path.file_name().unwrap().to_string_lossy())).display().to_string();
 
-    let mut app = App { path: Some(path_string.clone()), repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App {
+        path: Some(path_string.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        viewport: Viewport::Graph,
+        focus: Focus::Viewport,
+        graph_selected: 1,
+        ..Default::default()
+    };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
 
@@ -529,7 +550,7 @@ fn rename_branch_from_pane_opens_prefilled_modal_for_local_branch() {
     repo.branch("feature", &target, false).unwrap();
     drop(target);
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
     app.branches.sorted = vec![(1, "feature".to_string())];
 
     app.on_rename_branch();
@@ -542,7 +563,7 @@ fn rename_branch_from_pane_opens_prefilled_modal_for_local_branch() {
 #[test]
 fn rename_branch_from_pane_rejects_remote_branch() {
     let (_path, repo) = temp_repo("rename-pane-remote");
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
     app.branches.sorted = vec![(1, "origin/feature".to_string())];
 
     app.on_rename_branch();
@@ -560,7 +581,7 @@ fn rename_branch_from_graph_single_local_label_opens_modal() {
     repo.branch("feature", &target, false).unwrap();
     drop(target);
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
     app.branches.sorted = vec![(alias, "feature".to_string())];
@@ -580,7 +601,7 @@ fn rename_branch_from_graph_multiple_local_labels_uses_branch_choice_modal() {
     repo.branch("topic", &target, false).unwrap();
     drop(target);
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
     app.branches.sorted = vec![(alias, "feature".to_string()), (alias, "topic".to_string())];
@@ -604,7 +625,7 @@ fn rename_branch_from_graph_rejects_remote_only_labels() {
     let oid = commit(&repo, "file.txt", "initial");
     repo.reference("refs/remotes/origin/feature", oid, true, "remote").unwrap();
 
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 1, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE, alias];
     app.branches.sorted = vec![(alias, "origin/feature".to_string())];

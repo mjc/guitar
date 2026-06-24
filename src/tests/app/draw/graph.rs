@@ -125,7 +125,7 @@ fn rendered_lines(terminal: &Terminal<TestBackend>) -> Vec<String> {
 fn draw_graph_once(app: &mut App, repo: &Repository, terminal: &mut Terminal<TestBackend>) {
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, repo);
+            app.draw_graph(frame, Some(repo));
         })
         .unwrap();
 }
@@ -144,7 +144,7 @@ fn graph_highlights_file_history_rows_when_search_pane_is_open() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -168,7 +168,7 @@ fn graph_does_not_highlight_file_history_rows_when_search_pane_is_closed() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -188,7 +188,7 @@ fn graph_cached_rows_shift_up_when_requested_window_moves_down() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -210,7 +210,7 @@ fn graph_cached_rows_shift_down_when_requested_window_moves_up() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -234,7 +234,7 @@ fn graph_short_page_stripes_blank_tail_rows() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -252,7 +252,7 @@ fn graph_ascii_symbol_theme_renders_ascii_only_output() {
 
     let backend = TestBackend::new(80, 3);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| app.draw_graph(frame, &repo)).unwrap();
+    terminal.draw(|frame| app.draw_graph(frame, Some(&repo))).unwrap();
 
     let rendered = rendered_lines(&terminal).join("");
     assert!(rendered.is_ascii(), "{rendered:?}");
@@ -293,7 +293,7 @@ fn graph_empty_state_stripes_backdrop() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -313,7 +313,7 @@ fn uncommitted_row_waits_for_visible_page_before_rendering() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -333,7 +333,7 @@ fn uncommitted_row_renders_when_visible_page_is_ready() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -364,7 +364,7 @@ fn graph_draw_prefetches_one_screen_before_and_after_visible_window() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -390,7 +390,7 @@ fn graph_draw_keeps_prefetched_rows_out_of_visible_table() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 
@@ -416,7 +416,7 @@ fn zero_sized_graph_draw_does_not_request_empty_window() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            app.draw_graph(frame, &repo);
+            app.draw_graph(frame, Some(&repo));
         })
         .unwrap();
 

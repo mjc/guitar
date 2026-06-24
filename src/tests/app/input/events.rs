@@ -167,7 +167,7 @@ fn left_click_outside_context_menu_dismisses_without_selecting_underlying_row() 
 fn left_click_context_menu_settings_opens_settings_when_repo_exists() {
     let (_path, repo) = temp_repo("context-menu-settings");
     let mut app = context_menu_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
 
     app.handle_mouse_event(right_down(5, 5));
     app.handle_mouse_event(left_down(6, 11));
@@ -181,7 +181,7 @@ fn left_click_context_menu_settings_opens_settings_when_repo_exists() {
 fn repo_context_menu_includes_reload_global_action() {
     let (_path, repo) = temp_repo("context-menu-reload");
     let mut app = context_menu_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
 
     app.handle_mouse_event(right_down(5, 5));
 
@@ -245,7 +245,7 @@ fn right_click_selects_graph_row_and_opens_contextual_actions() {
 fn graph_context_menu_includes_fetch_and_push_when_repo_is_loaded() {
     let (_path, repo) = temp_repo("graph-network-menu");
     let mut app = graph_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.graph_scroll.set(2);
 
     app.handle_mouse_event(right_down(1, 3));
@@ -259,7 +259,7 @@ fn graph_context_menu_includes_fetch_and_push_when_repo_is_loaded() {
 fn graph_context_menu_groups_regular_action_mode_and_navigation_sections() {
     let (_path, repo) = temp_repo("graph-section-menu");
     let mut app = graph_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.graph_scroll.set(2);
 
     app.handle_mouse_event(right_down(1, 3));
@@ -282,7 +282,7 @@ fn graph_context_menu_groups_regular_action_mode_and_navigation_sections() {
 fn uncommitted_graph_context_menu_includes_fetch_and_push_when_repo_is_loaded() {
     let (_path, repo) = temp_repo("uncommitted-network-menu");
     let mut app = graph_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
 
     app.handle_mouse_event(right_down(1, 0));
 
@@ -352,7 +352,14 @@ fn right_click_selects_splash_recent_repo_and_opens_contextual_actions() {
 #[test]
 fn splash_context_menu_back_returns_to_graph_when_repo_loaded() {
     let (_path, repo) = temp_repo("splash-context-back");
-    let mut app = App { viewport: Viewport::Splash, focus: Focus::Viewport, repo: Some(Rc::new(repo)), layout_config: LayoutConfig::default(), layout: Layout::default(), ..Default::default() };
+    let mut app = App {
+        viewport: Viewport::Splash,
+        focus: Focus::Viewport,
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        layout_config: LayoutConfig::default(),
+        layout: Layout::default(),
+        ..Default::default()
+    };
     app.layout.app = Rect::new(0, 0, 80, 24);
     app.layout.graph = Rect::new(0, 0, 80, 24);
 
@@ -375,7 +382,14 @@ fn splash_context_menu_back_returns_to_graph_when_repo_loaded() {
 #[test]
 fn right_click_selects_settings_row_and_opens_contextual_actions() {
     let (_path, repo) = temp_repo("settings-context-reload");
-    let mut app = App { viewport: Viewport::Settings, focus: Focus::Viewport, repo: Some(Rc::new(repo)), layout_config: LayoutConfig::default(), layout: Layout::default(), ..Default::default() };
+    let mut app = App {
+        viewport: Viewport::Settings,
+        focus: Focus::Viewport,
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        layout_config: LayoutConfig::default(),
+        layout: Layout::default(),
+        ..Default::default()
+    };
     app.layout.graph = Rect::new(0, 0, 40, 5);
     app.settings_scroll.set(10);
     app.settings_selections = vec![SettingsSelection { line: 12, kind: SettingsSelectionKind::Theme(0) }];
@@ -582,7 +596,14 @@ fn mouse_scrollbars_work_for_inspector_and_status_panes() {
 #[test]
 fn mouse_click_on_settings_scrollbar_scrolls_settings() {
     let (_path, repo) = temp_repo("settings-scrollbar");
-    let mut app = App { viewport: Viewport::Settings, focus: Focus::Viewport, repo: Some(Rc::new(repo)), layout_config: LayoutConfig::default(), layout: Layout::default(), ..Default::default() };
+    let mut app = App {
+        viewport: Viewport::Settings,
+        focus: Focus::Viewport,
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        layout_config: LayoutConfig::default(),
+        layout: Layout::default(),
+        ..Default::default()
+    };
     app.layout.app = Rect::new(0, 0, 90, 10);
     app.layout.graph = Rect::new(0, 0, 90, 10);
 
@@ -761,7 +782,7 @@ fn mouse_click_on_settings_tab_switches_active_tab() {
     let (_path, repo) = temp_repo("settings-tab-click");
     let repo = Rc::new(repo);
     let mut app = App {
-        repo: Some(repo.clone()),
+        repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())),
         viewport: Viewport::Settings,
         focus: Focus::Viewport,
         layout_config: LayoutConfig::default(),
@@ -840,7 +861,7 @@ fn double_click_on_branch_row_acts_like_enter() {
     let (_path, repo) = temp_repo("branch-double");
     let mut app = graph_app();
     let oid = commit_file(&repo, "feature.txt", "feature");
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.layout_config.is_branches = true;
     app.layout.branches = Rect::new(0, 0, 20, 6);
     let alias = app.oids.get_alias_by_oid(oid);
@@ -859,7 +880,7 @@ fn viewer_mode_double_click_on_branch_row_acts_like_enter() {
     let (_path, repo) = temp_repo("viewer-branch-double");
     let mut app = graph_app();
     let oid = commit_file(&repo, "feature.txt", "feature");
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.viewport = Viewport::Viewer;
     app.layout_config.is_branches = true;
     app.layout.branches = Rect::new(0, 0, 20, 6);
@@ -884,7 +905,7 @@ fn double_click_on_tag_stash_and_reflog_rows_act_like_enter() {
     let repo = Rc::new(repo);
 
     let mut tag_app = graph_app();
-    tag_app.repo = Some(repo.clone());
+    tag_app.repo = Some(crate::app::app::RepoHandle::from_repo(repo.clone()));
     tag_app.layout_config.is_tags = true;
     tag_app.layout.tags = Rect::new(0, 0, 20, 6);
     let tag_alias = tag_app.oids.get_alias_by_oid(tag_oid);
@@ -896,7 +917,7 @@ fn double_click_on_tag_stash_and_reflog_rows_act_like_enter() {
     assert_eq!((tag_app.focus, tag_app.graph_selected), (Focus::Viewport, 1));
 
     let mut stash_app = graph_app();
-    stash_app.repo = Some(repo.clone());
+    stash_app.repo = Some(crate::app::app::RepoHandle::from_repo(repo.clone()));
     stash_app.layout_config.is_stashes = true;
     stash_app.layout.stashes = Rect::new(0, 0, 20, 6);
     let stash_alias = stash_app.oids.get_alias_by_oid(stash_oid);
@@ -908,7 +929,7 @@ fn double_click_on_tag_stash_and_reflog_rows_act_like_enter() {
     assert_eq!((stash_app.focus, stash_app.graph_selected), (Focus::Viewport, 1));
 
     let mut reflog_app = graph_app();
-    reflog_app.repo = Some(repo);
+    reflog_app.repo = Some(crate::app::app::RepoHandle::from_repo(repo));
     reflog_app.layout_config.is_reflogs = true;
     reflog_app.layout.reflogs = Rect::new(0, 0, 20, 6);
     let reflog_alias = reflog_app.oids.get_alias_by_oid(reflog_oid);
@@ -926,7 +947,7 @@ fn double_click_on_worktree_row_acts_like_enter() {
     let (current_path, repo) = temp_repo("worktree-current");
     let (target_path, _target_repo) = temp_repo("worktree-target");
     let mut app = graph_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.path = Some(current_path.display().to_string());
     let canonical_target = fs::canonicalize(&target_path).unwrap().display().to_string();
     app.recent = vec![canonical_target.clone()];
@@ -960,7 +981,7 @@ fn double_click_on_submodule_row_acts_like_enter() {
     let (current_path, repo) = temp_repo("submodule-current");
     let (target_path, _target_repo) = temp_repo("submodule-target");
     let mut app = graph_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.path = Some(current_path.display().to_string());
     let canonical_target = fs::canonicalize(&target_path).unwrap().display().to_string();
     app.recent = vec![canonical_target.clone()];
@@ -982,7 +1003,7 @@ fn double_click_on_status_row_acts_like_enter() {
     let (path, repo) = temp_repo("status-double");
     fs::write(path.join("file.txt"), "hello\n").unwrap();
     let mut app = graph_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.path = Some(path.display().to_string());
     app.layout_config.is_status = true;
     app.layout.status_top = Rect::new(0, 0, 30, 6);
@@ -1003,7 +1024,7 @@ fn viewer_mode_double_click_on_status_row_refreshes_viewer_file() {
     fs::write(path.join("old.txt"), "old\n").unwrap();
     fs::write(path.join("new.txt"), "new\n").unwrap();
     let mut app = graph_app();
-    app.repo = Some(Rc::new(repo));
+    app.repo = Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo)));
     app.path = Some(path.display().to_string());
     app.viewport = Viewport::Viewer;
     app.viewer_mode = ViewerMode::Full;

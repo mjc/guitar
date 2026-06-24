@@ -178,11 +178,17 @@ fn metadata_listing_can_mark_current_worktree_from_uncommitted_state() {
     let linked_repo = Repository::open(&worktree_path).unwrap();
 
     let entries = list_worktrees_metadata_with_current_dirty(&linked_repo, Some(&worktree_path), &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() }).unwrap();
+    let path_entries =
+        list_worktrees_metadata_with_current_dirty_from_path(&worktree_path, Some(&worktree_path), &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() })
+            .unwrap();
     let linked = entries.iter().find(|entry| entry.name == "feature").unwrap();
     let main = entries.iter().find(|entry| entry.is_main()).unwrap();
+    let path_linked = path_entries.iter().find(|entry| entry.name == "feature").unwrap();
 
     assert!(linked.is_current);
     assert!(linked.is_dirty);
+    assert!(path_linked.is_current);
+    assert!(path_linked.is_dirty);
     assert!(!main.is_current);
     assert!(!main.is_dirty);
 }

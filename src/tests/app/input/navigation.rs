@@ -99,7 +99,8 @@ fn graph_app_with_history() -> (App, git2::Oid, git2::Oid, git2::Oid) {
     let parent_oid = commit_file(&repo, "parent.txt", "parent");
     let child_oid = commit_file(&repo, "child.txt", "child");
 
-    let mut app = App { path: Some(path.display().to_string()), repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app =
+        App { path: Some(path.display().to_string()), repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     let root_alias = app.oids.get_alias_by_oid(root_oid);
     let parent_alias = app.oids.get_alias_by_oid(parent_oid);
     let child_alias = app.oids.get_alias_by_oid(child_oid);
@@ -396,7 +397,7 @@ fn branch_toggle_uses_git_branch_universe_when_pane_window_is_partial() {
 
     let mut app = App {
         path: Some(path.display().to_string()),
-        repo: Some(Rc::new(repo)),
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
         recent_save_path: Some(temp_recent_path("branch-window-toggle")),
         viewport: Viewport::Graph,
         focus: Focus::Branches,
@@ -427,7 +428,7 @@ fn reload_all_branches_clears_hidden_branch_layer() {
 fn search_pane_navigation_uses_result_count() {
     let (_path, repo) = temp_repo("search-nav");
     let oid = commit_file(&repo, "target.txt", "target");
-    let mut app = App { repo: Some(Rc::new(repo)), focus: Focus::Search, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), focus: Focus::Search, ..Default::default() };
     app.layout.search.height = 5;
     app.search_rows = (0..10).map(|idx| search_history_row(idx, oid)).collect();
 
@@ -532,7 +533,7 @@ fn splash_remove_recent_current_repo_keeps_repo_open() {
     let current = repo_path.display().to_string();
     let mut app = App {
         path: Some(current.clone()),
-        repo: Some(Rc::new(repo)),
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
         viewport: Viewport::Splash,
         focus: Focus::Viewport,
         recent: vec![current.clone(), "/repo/other".into()],
@@ -729,7 +730,7 @@ fn settings_recent_repository_commands_noop_on_non_recent_rows() {
 #[test]
 fn empty_branch_pane_select_and_narrow_are_noops() {
     let (_path, repo) = temp_repo("empty-branches");
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
 
     app.on_select();
     assert_eq!(app.focus, Focus::Branches);
@@ -741,7 +742,7 @@ fn empty_branch_pane_select_and_narrow_are_noops() {
 fn assert_offscreen_pane_narrow_requests_walker_row(focus: Focus, pane: GraphPane, selection: usize) {
     let (_path, repo) = temp_repo("offscreen-pane");
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(Rc::new(repo)), graph_tx: Some(tx), viewport: Viewport::Graph, focus, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), graph_tx: Some(tx), viewport: Viewport::Graph, focus, ..Default::default() };
     app.graph.generation = 7;
 
     match pane {
@@ -777,7 +778,7 @@ fn offscreen_pane_narrow_requests_selected_row_from_walker() {
 fn offscreen_graph_narrow_requests_row_before_opening_inspector() {
     let (_path, repo) = temp_repo("offscreen-inspector");
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(Rc::new(repo)), graph_tx: Some(tx), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), graph_tx: Some(tx), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     app.graph.generation = 7;
     app.graph_selected = 42;
     app.layout_config.is_zen = false;
@@ -801,7 +802,7 @@ fn offscreen_graph_narrow_requests_row_before_opening_inspector() {
 fn zen_offscreen_graph_narrow_opens_inspector_while_requesting_row() {
     let (_path, repo) = temp_repo("zen-offscreen-inspector");
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(Rc::new(repo)), graph_tx: Some(tx), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), graph_tx: Some(tx), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     app.graph.generation = 7;
     app.graph_selected = 42;
     app.layout_config.is_zen = true;
@@ -826,7 +827,7 @@ fn zen_graph_narrow_promotes_cached_window_row_before_opening_inspector() {
     let (_path, repo) = temp_repo("zen-cached-inspector");
     let oid = commit_file(&repo, "cached.txt", "cached");
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(Rc::new(repo)), graph_tx: Some(tx), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), graph_tx: Some(tx), viewport: Viewport::Graph, focus: Focus::Viewport, ..Default::default() };
     app.graph.generation = 7;
     app.graph.total = 43;
     app.graph_selected = 42;
@@ -842,7 +843,7 @@ fn zen_graph_narrow_promotes_cached_window_row_before_opening_inspector() {
     app.graph.graph_window = None;
     let identity = app.graph_identity_at(42).unwrap();
     assert_eq!(identity.alias, 99);
-    assert_eq!(identity.oid, oid);
+    assert_eq!(app.graph_oid_for_identity(identity), Some(oid));
 }
 
 #[test]
@@ -852,7 +853,15 @@ fn graph_row_lookup_result_opens_inspector_with_reflog() {
     let repo = Rc::new(repo);
     let (cmd_tx, _cmd_rx) = std::sync::mpsc::channel();
     let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app = App { repo: Some(repo.clone()), graph_tx: Some(cmd_tx), graph_rx: Some(event_rx), viewport: Viewport::Graph, focus: Focus::Viewport, graph_selected: 42, ..Default::default() };
+    let mut app = App {
+        repo: Some(crate::app::app::RepoHandle::from_repo(repo.clone())),
+        graph_tx: Some(cmd_tx),
+        graph_rx: Some(event_rx),
+        viewport: Viewport::Graph,
+        focus: Focus::Viewport,
+        graph_selected: 42,
+        ..Default::default()
+    };
     app.graph.generation = 7;
     app.graph.pending_lookup = Some((3, PendingGraphLookup::OpenInspector));
 
@@ -937,7 +946,7 @@ fn zen_pane_row_jump_uses_inner_graph_height_for_centering() {
 fn pane_alias_fallback_jump_centers_selected_graph_row() {
     let (_path, repo) = temp_repo("pane-alias-center");
     let oid = commit_file(&repo, "feature.txt", "feature");
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
+    let mut app = App { repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))), viewport: Viewport::Graph, focus: Focus::Branches, ..Default::default() };
     let alias = app.oids.get_alias_by_oid(oid);
     app.oids.sorted_aliases = vec![NONE; 100];
     app.oids.sorted_aliases[40] = alias;
@@ -990,7 +999,15 @@ fn settings_tab_commands_cycle_tabs_and_reset_selection() {
     let mut keymaps = minimal_keymaps();
     keymaps.get_mut(&InputMode::Normal).unwrap().insert(KeyBinding::new(KeyCode::Tab, KeyModifiers::NONE), Command::FocusNextPane);
     keymaps.get_mut(&InputMode::Normal).unwrap().insert(KeyBinding::new(KeyCode::BackTab, KeyModifiers::SHIFT), Command::FocusPreviousPane);
-    let mut app = App { repo: Some(Rc::new(repo)), viewport: Viewport::Settings, focus: Focus::Viewport, settings_tab: SettingsTab::General, settings_selected: 99, keymaps, ..Default::default() };
+    let mut app = App {
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        viewport: Viewport::Settings,
+        focus: Focus::Viewport,
+        settings_tab: SettingsTab::General,
+        settings_selected: 99,
+        keymaps,
+        ..Default::default()
+    };
     app.layout.graph = Rect::new(0, 0, 120, 40);
     app.layout.app = Rect::new(0, 0, 120, 40);
     app.settings_scroll.set(12);
@@ -1209,7 +1226,15 @@ fn graph_reflog_shift_digit_shortcut_toggles_and_reloads() {
     let path = path.display().to_string();
     let mut keymaps = minimal_keymaps();
     keymaps.get_mut(&InputMode::Normal).unwrap().insert(KeyBinding::new(KeyCode::Char('0'), KeyModifiers::SHIFT), Command::ToggleGraphReflogs);
-    let mut app = App { path: Some(path.clone()), recent: vec![path], repo: Some(Rc::new(repo)), viewport: Viewport::Graph, focus: Focus::Branches, keymaps, ..Default::default() };
+    let mut app = App {
+        path: Some(path.clone()),
+        recent: vec![path],
+        repo: Some(crate::app::app::RepoHandle::from_repo(Rc::new(repo))),
+        viewport: Viewport::Graph,
+        focus: Focus::Branches,
+        keymaps,
+        ..Default::default()
+    };
     app.layout_config.is_graph_reflogs = false;
 
     app.handle_key_event(KeyEvent::new(KeyCode::Char('0'), KeyModifiers::SHIFT));

@@ -39,7 +39,7 @@ fn app_with_graph_window(cycles: usize, visible_height: u16) -> (fixtures::TempF
 }
 
 fn draw_cached_graph(app: &mut App, repo: &git2::Repository, terminal: &mut Terminal<TestBackend>) -> usize {
-    terminal.draw(|frame| app.draw_graph(frame, repo)).unwrap();
+    terminal.draw(|frame| app.draw_graph(frame, Some(repo))).unwrap();
     black_box(terminal.backend().buffer().content().len())
 }
 

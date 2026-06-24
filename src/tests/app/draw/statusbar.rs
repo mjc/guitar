@@ -75,7 +75,7 @@ fn statusbar_renders_submodule_stack_before_branch() {
     let backend = TestBackend::new(200, 1);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| app.draw_statusbar(frame, &repo)).unwrap();
+    terminal.draw(|frame| app.draw_statusbar(frame)).unwrap();
 
     let rendered = rendered_symbols(&terminal);
     let breadcrumb = format!("{SYM_SUBMODULE} {}", path.file_name().unwrap().to_string_lossy());
@@ -105,7 +105,7 @@ fn statusbar_branch_count_uses_cached_branch_rows_without_scanning_refs() {
     let backend = TestBackend::new(60, 1);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| app.draw_statusbar(frame, &repo)).unwrap();
+    terminal.draw(|frame| app.draw_statusbar(frame)).unwrap();
 
     let rendered = rendered_symbols(&terminal);
     assert!(rendered.contains("1/1"), "{rendered}");

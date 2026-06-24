@@ -227,16 +227,26 @@ fn staged_diff_lists_only_index_changes_without_worktree_rows() {
     write(&path, "new.txt", "new\n");
 
     let changes = get_staged_filenames_diff(&repo).unwrap();
+    let path_changes = get_staged_filenames_diff_from_path(&path).unwrap();
 
     assert_contains_path(&changes.staged.modified, "staged.txt");
+    assert_contains_path(&path_changes.staged.modified, "staged.txt");
     assert!(changes.unstaged.modified.is_empty());
+    assert!(path_changes.unstaged.modified.is_empty());
     assert!(changes.unstaged.deleted.is_empty());
+    assert!(path_changes.unstaged.deleted.is_empty());
     assert!(changes.unstaged.added.is_empty());
+    assert!(path_changes.unstaged.added.is_empty());
     assert_eq!(changes.modified_count, 1);
+    assert_eq!(path_changes.modified_count, 1);
     assert_eq!(changes.added_count, 0);
+    assert_eq!(path_changes.added_count, 0);
     assert_eq!(changes.deleted_count, 0);
+    assert_eq!(path_changes.deleted_count, 0);
     assert!(changes.is_staged);
+    assert!(path_changes.is_staged);
     assert!(!changes.is_unstaged);
+    assert!(!path_changes.is_unstaged);
 
     let _ = fs::remove_dir_all(path);
 }
