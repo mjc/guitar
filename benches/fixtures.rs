@@ -28,10 +28,6 @@ impl TempFixture {
     pub fn path(&self) -> &Path {
         self.root.path()
     }
-
-    pub fn to_path_buf(&self) -> PathBuf {
-        self.path().to_path_buf()
-    }
 }
 
 impl Deref for TempFixture {
@@ -55,15 +51,11 @@ pub fn temp_repo(name: &str) -> (TempFixture, Repository) {
 }
 
 pub fn write_text(root: &Path, file: &str, contents: &str) {
-    write_bytes(root, file, contents.as_bytes());
-}
-
-pub fn write_bytes(root: &Path, file: &str, contents: &[u8]) {
     let path = root.join(file);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
-    fs::write(path, contents).unwrap();
+    fs::write(path, contents.as_bytes()).unwrap();
 }
 
 pub fn add_path(repo: &Repository, path: &str) {
