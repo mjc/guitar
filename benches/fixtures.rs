@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use git2::{Oid, Repository, Signature, StashFlags, build::CheckoutBuilder};
 use guitar::{
     core::{
@@ -18,8 +16,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const REPRESENTATIVE_CHECKPOINT_LANE_LIMIT: usize = 20;
-
+#[allow(dead_code)]
 pub struct TempFixture {
     root: tempfile::TempDir,
 }
@@ -27,6 +24,10 @@ pub struct TempFixture {
 impl TempFixture {
     pub fn path(&self) -> &Path {
         self.root.path()
+    }
+
+    pub fn to_path_buf(&self) -> PathBuf {
+        self.path().to_path_buf()
     }
 }
 
@@ -38,11 +39,13 @@ impl Deref for TempFixture {
     }
 }
 
+#[allow(dead_code)]
 pub fn temp_dir(name: &str) -> TempFixture {
     let prefix = format!("guitar-{name}-");
     TempFixture { root: tempfile::Builder::new().prefix(&prefix).tempdir().unwrap() }
 }
 
+#[allow(dead_code)]
 pub fn temp_repo(name: &str) -> (TempFixture, Repository) {
     let path = temp_dir(name);
     let repo = Repository::init(path.path()).unwrap();
@@ -50,20 +53,28 @@ pub fn temp_repo(name: &str) -> (TempFixture, Repository) {
     (path, repo)
 }
 
+#[allow(dead_code)]
 pub fn write_text(root: &Path, file: &str, contents: &str) {
+    write_bytes(root, file, contents.as_bytes());
+}
+
+#[allow(dead_code)]
+pub fn write_bytes(root: &Path, file: &str, contents: &[u8]) {
     let path = root.join(file);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
-    fs::write(path, contents.as_bytes()).unwrap();
+    fs::write(path, contents).unwrap();
 }
 
+#[allow(dead_code)]
 pub fn add_path(repo: &Repository, path: &str) {
     let mut index = repo.index().unwrap();
     index.add_path(Path::new(path)).unwrap();
     index.write().unwrap();
 }
 
+#[allow(dead_code)]
 pub fn commit_index(repo: &Repository, message: &str) -> Oid {
     let mut index = repo.index().unwrap();
     index.write().unwrap();
@@ -75,6 +86,7 @@ pub fn commit_index(repo: &Repository, message: &str) -> Oid {
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents).unwrap()
 }
 
+#[allow(dead_code)]
 pub fn commit_file(repo: &Repository, file: &str, contents: &str, message: &str) -> Oid {
     let workdir = repo.workdir().unwrap();
     write_text(workdir, file, contents);
@@ -82,12 +94,14 @@ pub fn commit_file(repo: &Repository, file: &str, contents: &str, message: &str)
     commit_index(repo, message)
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum BufferOp {
     Update(Chunk),
     Merger(u32),
 }
 
+#[allow(dead_code)]
 pub struct BufferFixture {
     pub ops: Vec<BufferOp>,
     pub buffer: Buffer,
@@ -95,6 +109,7 @@ pub struct BufferFixture {
     pub window_end: usize,
 }
 
+#[allow(dead_code)]
 pub struct GraphFixture {
     pub buffer: Buffer,
     pub rows: Vec<GraphRow>,
@@ -104,6 +119,7 @@ pub struct GraphFixture {
     pub symbols: SymbolTheme,
 }
 
+#[allow(dead_code)]
 pub struct GraphServiceFixture {
     pub _temp: TempFixture,
     pub path: PathBuf,
@@ -115,22 +131,7 @@ pub struct GraphServiceFixture {
     pub symbols: SymbolTheme,
 }
 
-fn worktree_entry(name: &str, path: PathBuf, branch: String, head: Oid, kind: WorktreeKind, is_current: bool) -> WorktreeEntry {
-    WorktreeEntry {
-        name: name.to_string(),
-        path,
-        branch: Some(branch),
-        head: Some(git2_to_gix_oid(head)),
-        alias: None,
-        kind,
-        is_current,
-        is_valid: true,
-        is_prunable: false,
-        locked_reason: None,
-        is_dirty: false,
-    }
-}
-
+#[allow(dead_code)]
 pub struct RepoWalkFixture {
     pub _temp: TempFixture,
     pub path: PathBuf,
@@ -142,6 +143,7 @@ pub struct RepoWalkFixture {
     pub expected_walker_rows: usize,
 }
 
+#[allow(dead_code)]
 pub fn graph_fixture(cycles: usize) -> GraphFixture {
     let mut buffer = Buffer::with_lane_limit(8);
     let mut rows = Vec::with_capacity(1 + cycles * 3);
@@ -181,12 +183,9 @@ pub fn graph_fixture(cycles: usize) -> GraphFixture {
     GraphFixture { buffer, rows, history, head_alias, theme: Theme::classic(), symbols: SymbolTheme::main() }
 }
 
+#[allow(dead_code)]
 pub fn buffer_linear_fixture(commits: usize) -> BufferFixture {
-    buffer_linear_fixture_with_lane_limit(commits, None)
-}
-
-pub fn buffer_linear_fixture_with_lane_limit(commits: usize, lane_limit: Option<usize>) -> BufferFixture {
-    let mut buffer = lane_limit.map(Buffer::with_lane_limit).unwrap_or_default();
+    let mut buffer = Buffer::default();
     let mut ops = Vec::with_capacity(commits);
     let mut parent = NONE;
 
@@ -201,6 +200,7 @@ pub fn buffer_linear_fixture_with_lane_limit(commits: usize, lane_limit: Option<
     BufferFixture { ops, window_start: 1, window_end: buffer.deltas.len(), buffer }
 }
 
+#[allow(dead_code)]
 pub fn buffer_merge_fixture(rounds: usize) -> BufferFixture {
     let mut buffer = Buffer::default();
     let mut ops = Vec::with_capacity(1 + rounds * 5);
@@ -248,24 +248,12 @@ pub fn buffer_merge_fixture(rounds: usize) -> BufferFixture {
     BufferFixture { ops, window_start: 1, window_end: buffer.deltas.len(), buffer }
 }
 
+#[allow(dead_code)]
 pub fn buffer_checkpoint_fixture(commits: usize) -> BufferFixture {
-    buffer_linear_fixture_with_lane_limit(commits, Some(REPRESENTATIVE_CHECKPOINT_LANE_LIMIT))
+    buffer_linear_fixture(commits)
 }
 
-pub fn buffer_capped_overflow_fixture(commits: usize, lane_limit: usize) -> BufferFixture {
-    let mut buffer = Buffer::with_lane_limit(lane_limit);
-    let mut ops = Vec::with_capacity(commits);
-
-    for alias in 1..=commits as u32 {
-        let chunk = Chunk::commit(alias, 100_000 + alias, NONE);
-        ops.push(BufferOp::Update(chunk));
-        buffer.update(chunk);
-    }
-
-    buffer.backup();
-    BufferFixture { ops, window_start: 1, window_end: buffer.deltas.len(), buffer }
-}
-
+#[allow(dead_code)]
 pub fn graph_service_fixture(rounds: usize) -> GraphServiceFixture {
     let temp = temp_dir("graph-service");
     let path = temp.to_path_buf();
@@ -304,10 +292,58 @@ pub fn graph_service_fixture(rounds: usize) -> GraphServiceFixture {
     let _ = repo.stash_save(&sig, "bench stash", Some(StashFlags::INCLUDE_UNTRACKED));
 
     let worktrees = vec![
-        worktree_entry("main", path.clone(), "topic".to_string(), current_base, WorktreeKind::Main, true),
-        worktree_entry("left", path.join("wt-left"), format!("left-{}", rounds.saturating_sub(1)), last_left, WorktreeKind::Linked, false),
-        worktree_entry("right", path.join("wt-right"), format!("right-{}", rounds.saturating_sub(1)), last_right, WorktreeKind::Linked, false),
-        worktree_entry("merge", path.join("wt-merge"), format!("left-{}", rounds.saturating_sub(1)), last_merge, WorktreeKind::Linked, false),
+        WorktreeEntry {
+            name: "main".to_string(),
+            path: path.clone(),
+            branch: Some("topic".to_string()),
+            head: Some(git2_to_gix_oid(current_base)),
+            alias: None,
+            kind: WorktreeKind::Main,
+            is_current: true,
+            is_valid: true,
+            is_prunable: false,
+            locked_reason: None,
+            is_dirty: false,
+        },
+        WorktreeEntry {
+            name: "left".to_string(),
+            path: path.join("wt-left"),
+            branch: Some(format!("left-{}", rounds.saturating_sub(1))),
+            head: Some(git2_to_gix_oid(last_left)),
+            alias: None,
+            kind: WorktreeKind::Linked,
+            is_current: false,
+            is_valid: true,
+            is_prunable: false,
+            locked_reason: None,
+            is_dirty: false,
+        },
+        WorktreeEntry {
+            name: "right".to_string(),
+            path: path.join("wt-right"),
+            branch: Some(format!("right-{}", rounds.saturating_sub(1))),
+            head: Some(git2_to_gix_oid(last_right)),
+            alias: None,
+            kind: WorktreeKind::Linked,
+            is_current: false,
+            is_valid: true,
+            is_prunable: false,
+            locked_reason: None,
+            is_dirty: false,
+        },
+        WorktreeEntry {
+            name: "merge".to_string(),
+            path: path.join("wt-merge"),
+            branch: Some(format!("left-{}", rounds.saturating_sub(1))),
+            head: Some(git2_to_gix_oid(last_merge)),
+            alias: None,
+            kind: WorktreeKind::Linked,
+            is_current: false,
+            is_valid: true,
+            is_prunable: false,
+            locked_reason: None,
+            is_dirty: false,
+        },
     ];
 
     GraphServiceFixture {
@@ -322,6 +358,7 @@ pub fn graph_service_fixture(rounds: usize) -> GraphServiceFixture {
     }
 }
 
+#[allow(dead_code)]
 pub fn repo_walk_linear_fixture(commits: usize, amount: usize) -> RepoWalkFixture {
     let (temp, mut repo) = repo_walk_repo("repo-walk-linear");
     let sig = signature();
@@ -334,6 +371,7 @@ pub fn repo_walk_linear_fixture(commits: usize, amount: usize) -> RepoWalkFixtur
     repo_walk_fixture(temp, amount, HashSet::new(), commits)
 }
 
+#[allow(dead_code)]
 pub fn repo_walk_many_refs_fixture(commits: usize, refs: usize, amount: usize) -> RepoWalkFixture {
     let (temp, mut repo) = repo_walk_repo("repo-walk-many-refs");
     let sig = signature();
@@ -354,31 +392,7 @@ pub fn repo_walk_many_refs_fixture(commits: usize, refs: usize, amount: usize) -
     repo_walk_fixture(temp, amount, HashSet::new(), commits)
 }
 
-pub fn repo_walk_many_tags_fixture(commits: usize, tags: usize, amount: usize) -> RepoWalkFixture {
-    let (temp, mut repo) = repo_walk_repo("repo-walk-many-tags");
-    let sig = signature();
-    let mut tips = Vec::with_capacity(commits);
-    let mut parent = commit_worktree(&mut repo, "root.txt", "root", &sig, &[]);
-    tips.push(parent);
-
-    for index in 1..commits {
-        parent = commit_worktree(&mut repo, &format!("linear-{index}.txt"), &format!("linear {index}"), &sig, &[parent]);
-        tips.push(parent);
-    }
-
-    for index in 0..tags {
-        let oid = tips[index % tips.len()];
-        let commit = repo.find_commit(oid).unwrap();
-        if index.is_multiple_of(2) {
-            repo.tag_lightweight(&format!("lightweight-{index:04}"), commit.as_object(), false).unwrap();
-        } else {
-            repo.tag(&format!("annotated-{index:04}"), commit.as_object(), &sig, &format!("annotated {index}"), false).unwrap();
-        }
-    }
-
-    repo_walk_fixture(temp, amount, HashSet::new(), commits)
-}
-
+#[allow(dead_code)]
 pub fn repo_walk_hidden_branches_fixture(visible_commits: usize, hidden_branches: usize, hidden_commits: usize, amount: usize) -> RepoWalkFixture {
     let (temp, mut repo) = repo_walk_repo("repo-walk-hidden");
     let sig = signature();
@@ -407,6 +421,7 @@ pub fn repo_walk_hidden_branches_fixture(visible_commits: usize, hidden_branches
     repo_walk_fixture(temp, amount, hidden_branch_names, visible_commits)
 }
 
+#[allow(dead_code)]
 pub fn repo_walk_merge_fixture(rounds: usize, amount: usize) -> RepoWalkFixture {
     let fixture = graph_service_fixture(rounds);
 
@@ -422,6 +437,7 @@ pub fn repo_walk_merge_fixture(rounds: usize, amount: usize) -> RepoWalkFixture 
     }
 }
 
+#[allow(dead_code)]
 pub fn apply_buffer_ops(ops: &[BufferOp]) -> Buffer {
     let mut buffer = Buffer::default();
 
@@ -437,6 +453,7 @@ pub fn apply_buffer_ops(ops: &[BufferOp]) -> Buffer {
     buffer
 }
 
+#[allow(dead_code)]
 fn push_commit(buffer: &mut Buffer, rows: &mut Vec<GraphRow>, index: usize, alias: u32, parent_a: u32, parent_b: u32, summary: String) {
     buffer.update(Chunk::commit(alias, parent_a, parent_b));
 
@@ -459,33 +476,37 @@ fn push_commit(buffer: &mut Buffer, rows: &mut Vec<GraphRow>, index: usize, alia
         reflog: None,
     };
 
-    if index.is_multiple_of(5) {
+    if index % 5 == 0 {
         row.has_any_branch = true;
         row.branches.push(GraphBranchLabel { name: format!("bench/branch-{alias}"), is_local: true, lane: None });
     }
 
-    if index.is_multiple_of(8) {
+    if index % 8 == 0 {
         row.tags.push(GraphTagLabel { name: format!("v{alias}"), lane: None });
     }
 
     rows.push(row);
 }
 
+#[allow(dead_code)]
 fn configure_repo(repo: &Repository) {
     let mut config = repo.config().unwrap();
     config.set_str("user.name", "Benchmark Runner").unwrap();
     config.set_str("user.email", "bench@example.com").unwrap();
 }
 
+#[allow(dead_code)]
 fn signature() -> Signature<'static> {
     Signature::now("Benchmark Runner", "bench@example.com").unwrap()
 }
 
+#[allow(dead_code)]
 fn checkout_branch(repo: &mut Repository, branch: &str) {
     repo.set_head(&format!("refs/heads/{branch}")).unwrap();
     repo.checkout_head(Some(CheckoutBuilder::default().force())).unwrap();
 }
 
+#[allow(dead_code)]
 fn repo_walk_repo(name: &str) -> (TempFixture, Repository) {
     let temp = temp_dir(name);
     let repo = Repository::init(temp.path()).unwrap();
@@ -493,6 +514,7 @@ fn repo_walk_repo(name: &str) -> (TempFixture, Repository) {
     (temp, repo)
 }
 
+#[allow(dead_code)]
 fn repo_walk_fixture(temp: TempFixture, amount: usize, hidden_branch_names: HashSet<String>, expected_commits: usize) -> RepoWalkFixture {
     RepoWalkFixture {
         path: temp.to_path_buf(),
@@ -506,6 +528,7 @@ fn repo_walk_fixture(temp: TempFixture, amount: usize, hidden_branch_names: Hash
     }
 }
 
+#[allow(dead_code)]
 fn commit_worktree(repo: &mut Repository, filename: &str, contents: &str, sig: &Signature<'_>, parents: &[Oid]) -> Oid {
     let workdir = repo.workdir().unwrap().to_path_buf();
     fs::write(workdir.join(filename), contents).unwrap();

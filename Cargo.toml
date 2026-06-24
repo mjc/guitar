@@ -50,15 +50,7 @@ name = "graph_service_windows"
 harness = false
 
 [[bench]]
-name = "draw_graph"
-harness = false
-
-[[bench]]
 name = "commit_batching"
-harness = false
-
-[[bench]]
-name = "heatmap"
 harness = false
 
 [[bench]]

@@ -80,7 +80,7 @@ fn checkout_worktree(repo: &mut gix::Repository, tree_id: gix::hash::ObjectId) -
     let workdir = repo.workdir().ok_or_else(|| git2::Error::from_str("Repository has no worktree"))?;
     let objects = repo.objects.clone().into_arc().map_err(gix_error)?;
 
-    gix_worktree_state::checkout(&mut index, workdir, objects, &files, &bytes, &should_interrupt, options).map_err(gix_error)?;
+    gix::worktree::state::checkout(&mut index, workdir, objects, &files, &bytes, &should_interrupt, options).map_err(gix_error)?;
     index.write(Default::default()).map_err(gix_error)?;
     Ok(())
 }

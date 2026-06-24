@@ -1,18 +1,15 @@
 mod fixtures;
 
 use divan::{Bencher, black_box};
-use fixtures::{
-    RepoWalkFixture, graph_service_fixture, repo_walk_hidden_branches_fixture, repo_walk_linear_fixture, repo_walk_many_refs_fixture, repo_walk_many_tags_fixture, repo_walk_merge_fixture,
-};
+use fixtures::{RepoWalkFixture, graph_service_fixture, repo_walk_hidden_branches_fixture, repo_walk_linear_fixture, repo_walk_many_refs_fixture, repo_walk_merge_fixture};
 use guitar::{
     core::{
         batcher::{Batcher, WalkCommit},
         oids::Oids,
         walker::Walker,
     },
-    git::queries::commits::{get_sorted_oids, get_tag_oids},
+    git::queries::commits::get_sorted_oids,
 };
-use std::{path::PathBuf, process::Command};
 
 fn main() {
     divan::main();
@@ -27,34 +24,13 @@ struct CommitBatchFixture {
     expected_commits: usize,
 }
 
-struct BatcherInitFixture {
-    path: PathBuf,
-    hidden_branch_names: im::HashSet<String>,
-    _fixture: fixtures::GraphServiceFixture,
-}
-
-fn batcher_init_fixture(rounds: usize) -> BatcherInitFixture {
-    let fixture = graph_service_fixture(rounds);
-    BatcherInitFixture { path: fixture.path.clone(), hidden_branch_names: fixture.hidden_branch_names.clone(), _fixture: fixture }
-}
-
 fn commit_batch_fixture(fixture: RepoWalkFixture) -> CommitBatchFixture {
     let repo = gix::open(&fixture.path).unwrap();
+    let batcher = Batcher::new(&repo, &fixture.hidden_branch_names, std::iter::empty::<gix::ObjectId>()).unwrap();
     let amount = fixture.amount;
     let expected_commits = fixture.expected_commits;
-    let batcher = Batcher::new(&repo, &fixture.hidden_branch_names, std::iter::empty::<gix::ObjectId>()).unwrap();
 
     CommitBatchFixture { _fixture: fixture, batcher, _repo: repo, scratch: Vec::with_capacity(amount), amount, expected_commits }
-}
-
-fn write_commit_graph(path: &PathBuf) {
-    let status = Command::new("git").arg("-C").arg(path).args(["commit-graph", "write", "--reachable"]).status().unwrap();
-    assert!(status.success());
-}
-
-fn commit_batch_fixture_with_commit_graph(fixture: RepoWalkFixture) -> CommitBatchFixture {
-    write_commit_graph(&fixture.path);
-    commit_batch_fixture(fixture)
 }
 
 fn sorted_oid_pages(mut fixture: CommitBatchFixture) -> usize {
@@ -73,12 +49,6 @@ fn sorted_oid_pages(mut fixture: CommitBatchFixture) -> usize {
     sorted.len()
 }
 
-fn initialize_batcher(fixture: BatcherInitFixture) -> usize {
-    let repo = gix::open(&fixture.path).unwrap();
-    black_box(Batcher::new(&repo, &fixture.hidden_branch_names, std::iter::empty::<gix::ObjectId>()).unwrap());
-    0
-}
-
 fn walker_walk_pages(fixture: RepoWalkFixture, full_walk: bool) -> usize {
     let mut walker = Walker::new(fixture.path.display().to_string(), fixture.amount, fixture.hidden_branch_names, fixture.include_head_reflog_roots, fixture.graph_lane_limit).unwrap();
 
@@ -95,19 +65,6 @@ fn walker_walk_pages(fixture: RepoWalkFixture, full_walk: bool) -> usize {
         assert!(walked <= fixture.amount.saturating_add(1));
     }
     walked
-}
-
-fn walker_startup(fixture: RepoWalkFixture) -> usize {
-    let walker = Walker::new(fixture.path.display().to_string(), fixture.amount, fixture.hidden_branch_names, fixture.include_head_reflog_roots, fixture.graph_lane_limit).unwrap();
-    let refs = walker.branches_local.values().map(Vec::len).sum::<usize>() + walker.branches_remote.values().map(Vec::len).sum::<usize>() + walker.tags_local.values().map(Vec::len).sum::<usize>();
-    black_box(refs)
-}
-
-fn collect_tag_oids(fixture: RepoWalkFixture) -> usize {
-    let repo = gix::open(&fixture.path).unwrap();
-    let mut oids = Oids::default();
-    let tags = get_tag_oids(&repo, &mut oids);
-    black_box(tags.values().map(Vec::len).sum())
 }
 
 #[divan::bench(sample_count = 20, sample_size = 1)]
@@ -173,31 +130,6 @@ fn walker_full_walk_merge_heavy(bencher: Bencher) {
         .bench_local_values(|fixture| black_box(walker_walk_pages(fixture, true)));
 }
 
-#[divan::bench(sample_count = 20, sample_size = 1)]
-fn walker_startup_many_tags(bencher: Bencher) {
-    let commits = 256usize;
-    let tags = 512usize;
-    let amount = 64usize;
-
-    bencher.counter(divan::counter::ItemsCount::new(tags)).with_inputs(|| repo_walk_many_tags_fixture(commits, tags, amount)).bench_local_values(|fixture| black_box(walker_startup(fixture)));
-}
-
-#[divan::bench(sample_count = 20, sample_size = 1)]
-fn tag_oid_collection_many_tags(bencher: Bencher) {
-    let commits = 256usize;
-    let tags = 512usize;
-    let amount = 64usize;
-
-    bencher.counter(divan::counter::ItemsCount::new(tags)).with_inputs(|| repo_walk_many_tags_fixture(commits, tags, amount)).bench_local_values(|fixture| black_box(collect_tag_oids(fixture)));
-}
-
-#[divan::bench(sample_count = 50, sample_size = 10)]
-fn batcher_new_medium(bencher: Bencher) {
-    let rounds = 24usize;
-
-    bencher.counter(divan::counter::ItemsCount::new(rounds.saturating_mul(4))).with_inputs(|| batcher_init_fixture(rounds)).bench_local_values(|fixture| black_box(initialize_batcher(fixture)));
-}
-
 #[divan::bench(sample_count = 50, sample_size = 10)]
 fn sorted_oid_pages_medium(bencher: Bencher) {
     let rounds = 24usize;
@@ -209,24 +141,18 @@ fn sorted_oid_pages_medium(bencher: Bencher) {
         .bench_local_values(|fixture| black_box(sorted_oid_pages(fixture)));
 }
 
-#[divan::bench(sample_count = 20, sample_size = 5)]
-fn sorted_oid_pages_large(bencher: Bencher) {
-    let rounds = 160usize;
-    let amount = 256usize;
+fn walk_all_pages(rounds: usize) -> usize {
+    let fixture = graph_service_fixture(rounds);
+    let mut walker = Walker::new(fixture.path.display().to_string(), fixture.amount, fixture.hidden_branch_names, fixture.include_head_reflog_roots, fixture.graph_lane_limit).unwrap();
 
-    bencher
-        .counter(divan::counter::ItemsCount::new(rounds.saturating_mul(4)))
-        .with_inputs(|| commit_batch_fixture(repo_walk_merge_fixture(rounds, amount)))
-        .bench_local_values(|fixture| black_box(sorted_oid_pages(fixture)));
+    while walker.walk() {}
+
+    black_box(walker.oids.get_sorted_aliases().len())
 }
 
-#[divan::bench(sample_count = 20, sample_size = 5)]
-fn sorted_oid_pages_large_commit_graph(bencher: Bencher) {
-    let rounds = 160usize;
-    let amount = 256usize;
+#[divan::bench(sample_count = 50, sample_size = 10)]
+fn walker_walk_pages_medium(bencher: Bencher) {
+    let rounds = 24usize;
 
-    bencher
-        .counter(divan::counter::ItemsCount::new(rounds.saturating_mul(4)))
-        .with_inputs(|| commit_batch_fixture_with_commit_graph(repo_walk_merge_fixture(rounds, amount)))
-        .bench_local_values(|fixture| black_box(sorted_oid_pages(fixture)));
+    bencher.counter(divan::counter::ItemsCount::new(rounds.saturating_mul(4))).bench(|| black_box(walk_all_pages(rounds)));
 }

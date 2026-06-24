@@ -107,7 +107,7 @@ fn checkout_submodule_commit(repo: &mut gix::Repository, target_oid: gix::Object
         commit.tree().map_err(|error| git2::Error::from_str(&error.to_string()))?.id
     };
     let mut index = repo.index_from_tree(&tree_id).map_err(|error| git2::Error::from_str(&error.to_string()))?;
-    let mut options = repo.checkout_options(gix_worktree::stack::state::attributes::Source::IdMapping).map_err(|error| git2::Error::from_str(&error.to_string()))?;
+    let mut options = repo.checkout_options(gix::worktree::stack::state::attributes::Source::IdMapping).map_err(|error| git2::Error::from_str(&error.to_string()))?;
     options.destination_is_initially_empty = newly_initialized;
 
     let workdir = repo.workdir().ok_or_else(|| git2::Error::from_str("Submodule has no working directory"))?;

@@ -2,17 +2,14 @@ mod fixtures;
 
 use divan::{Bencher, black_box, counter::ItemsCount};
 use fixtures::{TempFixture, add_path, commit_file, temp_repo, write_text};
-use guitar::{
-    App,
-    core::{graph_service::GraphCommand, walker::Walker},
-    git::actions::worktrees::create_worktree,
-};
+use guitar::{App, core::graph_service::GraphCommand, git::actions::worktrees::create_worktree};
 use im::HashSet;
 use std::{
     path::{Path, PathBuf},
     thread,
     time::{Duration, Instant},
 };
+use tempfile::NamedTempFile;
 
 fn main() {
     divan::main();
@@ -21,11 +18,9 @@ fn main() {
 struct StartupFixture {
     _temp: TempFixture,
     path: PathBuf,
-    linked_path: PathBuf,
     recent_path: PathBuf,
     expected_worktrees: usize,
     expected_dirty_files: usize,
-    expected_staged_files: usize,
 }
 
 fn startup_fixture(commits: usize, linked_worktrees: usize, dirty_files: usize) -> StartupFixture {
@@ -53,16 +48,7 @@ fn startup_fixture(commits: usize, linked_worktrees: usize, dirty_files: usize) 
 
     let path_buf = path.to_path_buf();
     let recent_path = path_buf.join(".bench-config").join("recent.json");
-    let linked_path = path.parent().unwrap_or_else(|| Path::new(".")).join(format!("{}-wt-000", path.file_name().and_then(|name| name.to_str()).unwrap_or("repo")));
-    StartupFixture {
-        _temp: path,
-        path: path_buf,
-        linked_path,
-        recent_path,
-        expected_worktrees: linked_worktrees + 1,
-        expected_dirty_files: dirty_files,
-        expected_staged_files: dirty_files.div_ceil(2),
-    }
+    StartupFixture { _temp: path, path: path_buf, recent_path, expected_worktrees: linked_worktrees + 1, expected_dirty_files: dirty_files }
 }
 
 fn reload_app(fixture: &StartupFixture) -> App {
@@ -94,7 +80,7 @@ fn reload_startup_components(fixture: StartupFixture) -> usize {
     loaded
 }
 
-fn reload_until_uncommitted_metadata(fixture: StartupFixture) -> usize {
+fn reload_until_first_graph_progress(fixture: StartupFixture) -> usize {
     let mut app = reload_app(&fixture);
     let repo = app.repo.clone().unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -105,45 +91,10 @@ fn reload_until_uncommitted_metadata(fixture: StartupFixture) -> usize {
     }
 
     assert!(app.is_uncommitted_loaded);
-    assert!(!app.is_uncommitted_detail_loaded);
-    assert!(app.uncommitted.staged.added.len() >= fixture.expected_staged_files);
-    let loaded = app.worktrees.entries.len() + app.uncommitted.staged.added.len();
-    shutdown_app(&mut app);
-    loaded
-}
-
-fn reload_until_uncommitted_details(fixture: StartupFixture) -> usize {
-    let mut app = reload_app(&fixture);
-    let repo = app.repo.clone().unwrap();
-    let metadata_deadline = Instant::now() + Duration::from_secs(10);
-
-    while !app.is_uncommitted_loaded && Instant::now() < metadata_deadline {
-        app.sync(&repo);
-        thread::sleep(Duration::from_millis(1));
-    }
-
-    assert!(app.is_uncommitted_loaded);
-    app.ensure_uncommitted_details_loaded();
-
-    let details_deadline = Instant::now() + Duration::from_secs(10);
-    while !app.is_uncommitted_detail_loaded && Instant::now() < details_deadline {
-        app.sync(&repo);
-        thread::sleep(Duration::from_millis(1));
-    }
-
-    assert!(app.is_uncommitted_detail_loaded);
     assert!(app.uncommitted.staged.added.len() + app.uncommitted.unstaged.added.len() >= fixture.expected_dirty_files);
     let loaded = app.worktrees.entries.len() + app.uncommitted.staged.added.len() + app.uncommitted.unstaged.added.len();
     shutdown_app(&mut app);
     loaded
-}
-
-fn construct_walker_startup(path: &Path) -> usize {
-    let walker = Walker::new(path.display().to_string(), 10_000, HashSet::new(), true, 20).unwrap();
-    let branches = walker.branches_local.values().map(Vec::len).sum::<usize>() + walker.branches_remote.values().map(Vec::len).sum::<usize>();
-    let tags = walker.tags_local.values().map(Vec::len).sum::<usize>();
-    let stashes = walker.oids.stashes.len();
-    black_box(branches + tags + stashes + walker.head_reflog_entries.len())
 }
 
 #[divan::bench(sample_count = 20, sample_size = 1)]
@@ -159,7 +110,7 @@ fn app_reload_startup_components(bencher: Bencher) {
 }
 
 #[divan::bench(sample_count = 20, sample_size = 1)]
-fn app_reload_until_uncommitted_metadata(bencher: Bencher) {
+fn app_reload_until_first_graph_progress(bencher: Bencher) {
     let commits = 96usize;
     let linked_worktrees = 8usize;
     let dirty_files = 24usize;
@@ -167,41 +118,30 @@ fn app_reload_until_uncommitted_metadata(bencher: Bencher) {
     bencher
         .counter(ItemsCount::new(commits.saturating_add(linked_worktrees).saturating_add(dirty_files)))
         .with_inputs(|| startup_fixture(commits, linked_worktrees, dirty_files))
-        .bench_local_values(|fixture| black_box(reload_until_uncommitted_metadata(fixture)));
+        .bench_local_values(|fixture| black_box(reload_until_first_graph_progress(fixture)));
 }
 
-#[divan::bench(sample_count = 20, sample_size = 1)]
-fn app_reload_until_uncommitted_details(bencher: Bencher) {
-    let commits = 96usize;
-    let linked_worktrees = 8usize;
-    let dirty_files = 24usize;
-
-    bencher
-        .counter(ItemsCount::new(commits.saturating_add(linked_worktrees).saturating_add(dirty_files)))
-        .with_inputs(|| startup_fixture(commits, linked_worktrees, dirty_files))
-        .bench_local_values(|fixture| black_box(reload_until_uncommitted_details(fixture)));
+#[divan::bench(sample_count = 50, sample_size = 10)]
+fn app_default_state(bencher: Bencher) {
+    bencher.bench_local(|| black_box(App::default()));
 }
 
-#[divan::bench(sample_count = 20, sample_size = 1)]
-fn walker_new_startup_setup(bencher: Bencher) {
-    let commits = 96usize;
-    let linked_worktrees = 8usize;
-    let dirty_files = 24usize;
+#[divan::bench(sample_count = 50, sample_size = 10)]
+fn load_branch_visibility_for_startup_repo(bencher: Bencher) {
+    let config = NamedTempFile::new().unwrap();
+    let config_path = config.path();
+    let repo_path = "/tmp/guitar/startup";
+    let hidden = ["main".to_string(), "origin/slow".to_string()].into_iter().collect();
+    guitar::helpers::branch_visibility::save_branch_visibility_to_path(config_path, repo_path, &hidden);
 
-    bencher
-        .counter(ItemsCount::new(commits.saturating_add(linked_worktrees).saturating_add(dirty_files)))
-        .with_inputs(|| startup_fixture(commits, linked_worktrees, dirty_files))
-        .bench_local_values(|fixture| black_box(construct_walker_startup(&fixture.path)));
+    bencher.bench_local(|| black_box(guitar::helpers::branch_visibility::load_branch_visibility_from_path(config_path, repo_path)));
 }
 
-#[divan::bench(sample_count = 20, sample_size = 1)]
-fn walker_new_linked_worktree_startup_setup(bencher: Bencher) {
-    let commits = 96usize;
-    let linked_worktrees = 8usize;
-    let dirty_files = 24usize;
+#[divan::bench(sample_count = 50, sample_size = 10)]
+fn load_symbol_theme_for_startup(bencher: Bencher) {
+    let config = NamedTempFile::new().unwrap();
+    let config_path = config.path();
+    guitar::helpers::symbols::save_symbol_theme_to_path(config_path, &guitar::helpers::symbols::SymbolTheme::ascii());
 
-    bencher
-        .counter(ItemsCount::new(commits.saturating_add(linked_worktrees).saturating_add(dirty_files)))
-        .with_inputs(|| startup_fixture(commits, linked_worktrees, dirty_files))
-        .bench_local_values(|fixture| black_box(construct_walker_startup(&fixture.linked_path)));
+    bencher.bench_local(|| black_box(guitar::helpers::symbols::load_symbol_theme_from_path(config_path)));
 }
