@@ -38,7 +38,7 @@ fn aliases_keep_distinct_oids_with_shared_prefix() {
 }
 
 #[test]
-fn aliases_keep_distinct_oids_with_shared_32_bit_fingerprint() {
+fn aliases_keep_distinct_oids_with_shared_prefix_bytes() {
     let mut oids = Oids::default();
     let first_oid = oid_with_prefix(0x1234_5678_0000_0001, 10);
     let second_oid = oid_with_prefix(0x1234_5678_ffff_ffff, 20);
@@ -74,7 +74,7 @@ fn aliases_lookup_across_many_inserted_oids() {
 }
 
 #[test]
-fn full_oid_lookup_handles_many_shared_fingerprints() {
+fn full_oid_lookup_handles_many_similar_oids() {
     let mut oids = Oids::default();
     let first = oid_with_prefix(0xfeed_beef_0000_0001, 10);
     let boundary = oid_with_prefix(0xfeed_beef_ffff_ffff, 20);
@@ -100,57 +100,6 @@ fn missing_alias_lookup_returns_none() {
     oids.get_alias_by_oid(present);
 
     assert_eq!(oids.get_existing_alias(missing), None);
-}
-
-#[test]
-fn compacted_alias_index_preserves_unique_lookup() {
-    let mut oids = Oids::default();
-    let input: Vec<_> = (1..=32).map(|prefix| oid_with_prefix(prefix, 10)).collect();
-
-    for &oid in &input {
-        oids.get_alias_by_oid(oid);
-    }
-
-    oids.compact_alias_index();
-
-    for (expected, &oid) in input.iter().enumerate() {
-        assert_eq!(oids.get_existing_alias(oid), Some(expected as u32));
-        assert_eq!(oids.get_alias_by_oid(oid), expected as u32);
-    }
-}
-
-#[test]
-fn compacted_alias_index_preserves_collision_lookup() {
-    let mut oids = Oids::default();
-    let first = oid_with_prefix(7, 10);
-    let second = oid_with_prefix(7, 20);
-    let third = oid_with_prefix(7, 30);
-
-    let first_alias = oids.get_alias_by_oid(first);
-    let second_alias = oids.get_alias_by_oid(second);
-    let third_alias = oids.get_alias_by_oid(third);
-
-    oids.compact_alias_index();
-
-    assert_eq!(oids.get_existing_alias(first), Some(first_alias));
-    assert_eq!(oids.get_existing_alias(second), Some(second_alias));
-    assert_eq!(oids.get_existing_alias(third), Some(third_alias));
-}
-
-#[test]
-fn insertion_after_compaction_rematerializes_hash_index() {
-    let mut oids = Oids::default();
-    let first = oid_with_prefix(1, 10);
-    let second = oid_with_prefix(2, 20);
-
-    let first_alias = oids.get_alias_by_oid(first);
-    oids.compact_alias_index();
-
-    let second_alias = oids.get_alias_by_oid(second);
-
-    assert_ne!(first_alias, second_alias);
-    assert_eq!(oids.get_existing_alias(first), Some(first_alias));
-    assert_eq!(oids.get_existing_alias(second), Some(second_alias));
 }
 
 #[test]

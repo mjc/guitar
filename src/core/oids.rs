@@ -89,8 +89,6 @@ impl Oids {
         }
     }
 
-    pub fn compact_alias_index(&mut self) {}
-
     pub fn shrink_to_fit(&mut self) {
         self.alias_oids.shrink_to_fit();
         self.sorted_aliases.shrink_to_fit();

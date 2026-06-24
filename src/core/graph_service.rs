@@ -335,7 +335,6 @@ fn run_graph_service(config: GraphServiceConfig, rx: Receiver<GraphCommand>, tx:
         is_first = false;
 
         if is_complete {
-            walk_ctx.oids.compact_alias_index();
             walk_ctx.oids.shrink_to_fit();
             walk_ctx.buffer.borrow_mut().shrink_to_fit();
             let heatmap = Box::new(walk_ctx.heatmap_counts.build());

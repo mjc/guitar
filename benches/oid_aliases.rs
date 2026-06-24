@@ -174,31 +174,6 @@ fn lookup_existing_aliases(input: &[ObjectId]) -> u32 {
     input.iter().fold(0, |acc, &oid| acc ^ aliases.get_alias_by_oid(oid))
 }
 
-fn lookup_compacted_aliases(input: &[ObjectId]) -> u32 {
-    let mut aliases = Oids::default();
-    aliases.reserve_aliases(input.len());
-
-    for &oid in input {
-        aliases.get_alias_by_oid(oid);
-    }
-
-    aliases.compact_alias_index();
-
-    input.iter().fold(0, |acc, &oid| acc ^ aliases.get_existing_alias(oid).unwrap_or(0))
-}
-
-fn compact_aliases(input: &[ObjectId]) -> usize {
-    let mut aliases = Oids::default();
-    aliases.reserve_aliases(input.len());
-
-    for &oid in input {
-        aliases.get_alias_by_oid(oid);
-    }
-
-    aliases.compact_alias_index();
-    black_box(aliases.len())
-}
-
 fn insert_aliases_in_batches(input: &[ObjectId], batch_size: usize) -> usize {
     let mut aliases = Oids::default();
 
@@ -328,16 +303,6 @@ fn oid_alias_lookup_bi_iddqd_alias_to_oid_large(bencher: Bencher) {
 }
 
 #[divan::bench(sample_count = 50, sample_size = 10)]
-fn oid_alias_lookup_compacted_large(bencher: Bencher) {
-    bencher.counter(divan::counter::ItemsCount::new(100_000usize)).with_inputs(|| oids(100_000)).bench_local_values(|input| black_box(lookup_compacted_aliases(&input)));
-}
-
-#[divan::bench(sample_count = 50, sample_size = 10)]
-fn oid_alias_compact_large(bencher: Bencher) {
-    bencher.counter(divan::counter::ItemsCount::new(100_000usize)).with_inputs(|| oids(100_000)).bench_local_values(|input| black_box(compact_aliases(&input)));
-}
-
-#[divan::bench(sample_count = 50, sample_size = 10)]
 fn oid_alias_insert_colliding_medium(bencher: Bencher) {
     bencher.counter(divan::counter::ItemsCount::new(10_000usize)).with_inputs(|| colliding_oids(10_000)).bench_local_values(|input| black_box(insert_aliases(&input)));
 }
@@ -345,9 +310,4 @@ fn oid_alias_insert_colliding_medium(bencher: Bencher) {
 #[divan::bench(sample_count = 50, sample_size = 10)]
 fn oid_alias_lookup_existing_colliding_medium(bencher: Bencher) {
     bencher.counter(divan::counter::ItemsCount::new(10_000usize)).with_inputs(|| colliding_oids(10_000)).bench_local_values(|input| black_box(lookup_existing_aliases(&input)));
-}
-
-#[divan::bench(sample_count = 50, sample_size = 10)]
-fn oid_alias_lookup_compacted_colliding_medium(bencher: Bencher) {
-    bencher.counter(divan::counter::ItemsCount::new(10_000usize)).with_inputs(|| colliding_oids(10_000)).bench_local_values(|input| black_box(lookup_compacted_aliases(&input)));
 }
