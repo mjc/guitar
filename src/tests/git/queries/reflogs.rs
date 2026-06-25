@@ -44,21 +44,6 @@ fn append_reflog_entry(repo: &Repository, new_oid: Oid, message: &str) {
 }
 
 #[test]
-fn head_reflog_keeps_commit_after_reset() {
-    let (_path, repo) = temp_repo("lost-head");
-    let base = commit(&repo, "file.txt", "base");
-    let lost = commit(&repo, "file.txt", "lost");
-    let base_commit = repo.find_commit(base).unwrap();
-    repo.reset(base_commit.as_object(), ResetType::Hard, None).unwrap();
-
-    let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
-    let entries = get_head_reflog_entries(&gix_repo).unwrap();
-
-    assert!(entries.iter().any(|entry| entry.new_oid == git2_to_gix_oid(lost) && entry.selector.starts_with("HEAD@{")));
-    assert_eq!(repo.head().unwrap().target(), Some(base));
-}
-
-#[test]
 fn head_reflog_skips_entries_that_no_longer_point_to_commits() {
     let (_path, repo) = temp_repo("skip-non-commit");
     let base = commit(&repo, "file.txt", "base");
@@ -75,6 +60,7 @@ fn head_reflog_skips_entries_that_no_longer_point_to_commits() {
     assert!(entries.iter().any(|entry| entry.new_oid == git2_to_gix_oid(lost)));
     assert!(!entries.iter().any(|entry| entry.message == "skip-me"));
     assert_eq!(entries.first().map(|entry| entry.selector.as_str()), Some("HEAD@{1}"));
+    assert_eq!(repo.head().unwrap().target(), Some(base));
 }
 
 #[test]
