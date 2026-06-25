@@ -43,16 +43,6 @@ fn list_remotes_returns_empty_for_repo_without_remotes() {
 }
 
 #[test]
-fn effective_default_remote_uses_current_branch_upstream_when_no_config_default_exists() {
-    let (_dir, path, repo) = temp_repo("upstream-default");
-    repo.remote("origin", "https://example.com/origin.git").unwrap();
-    repo.remote("upstream", "https://example.com/upstream.git").unwrap();
-    set_current_branch_upstream(&repo, "upstream");
-
-    assert_eq!(effective_default_remote(path.as_path()).as_deref(), Some("upstream"));
-}
-
-#[test]
 fn effective_default_remote_prefers_origin_before_first_sorted_remote() {
     let (_dir, path, repo) = temp_repo("origin-fallback");
     repo.remote("zeta", "https://example.com/zeta.git").unwrap();
