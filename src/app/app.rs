@@ -15,7 +15,6 @@ use crate::{
             submodules::list_submodules_from_path,
             worktrees::{list_worktrees_metadata_from_path, list_worktrees_metadata_with_current_dirty, list_worktrees_metadata_with_current_dirty_from_path},
         },
-        repository::open,
     },
     helpers::{
         branch_visibility::{current_branch_names_from_repo, load_branch_visibility, prune_hidden_branches, save_branch_visibility},
@@ -107,7 +106,7 @@ impl RepoHandle {
             return Ok(repo.clone());
         }
 
-        let repo = Rc::new(open(&self.path)?);
+        let repo = Rc::new(Repository::open(&self.path)?);
         let _ = self.git2.set(repo.clone());
         Ok(repo)
     }
@@ -121,7 +120,7 @@ impl Deref for RepoHandle {
     type Target = Repository;
 
     fn deref(&self) -> &Self::Target {
-        self.git2.get_or_init(|| Rc::new(open(&self.path).expect("repository should open lazily"))).as_ref()
+        self.git2.get_or_init(|| Rc::new(Repository::open(&self.path).expect("repository should open lazily"))).as_ref()
     }
 }
 
@@ -1199,7 +1198,7 @@ impl App {
         self.is_uncommitted_detail_loading = true;
 
         std::thread::spawn(move || {
-            let result = open(&path).map_err(|error| error.to_string()).and_then(|repo| {
+            let result = Repository::open(&path).map_err(|error| error.to_string()).and_then(|repo| {
                 let uncommitted = get_filenames_diff_at_workdir(&repo).map_err(|error| error.to_string())?;
                 if let Ok(worktrees) = list_worktrees_metadata_with_current_dirty(&repo, Some(path.as_path()), &uncommitted) {
                     let _ = reload_metadata_tx.send(GraphCommand::UpdateWorktrees { generation, worktrees });

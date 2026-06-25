@@ -1,9 +1,8 @@
-use crate::git::repository::open_worktree_owner;
 use git2::{BranchType, Error, Oid, Repository, WorktreeAddOptions, WorktreeLockStatus, WorktreePruneOptions};
 use std::path::Path;
 
 fn worktree_owner(repo: &Repository) -> Result<Repository, Error> {
-    open_worktree_owner(repo)
+    Repository::open(repo.commondir())
 }
 
 pub fn is_valid_worktree_name(name: &str) -> bool {

@@ -1,9 +1,8 @@
 use crate::{
     git::auth::{AuthAttempt, AuthSession, NetworkResult, network_result},
-    git::repository::open,
     helpers::localisation::network,
 };
-use git2::{PushOptions, RemoteCallbacks};
+use git2::{PushOptions, RemoteCallbacks, Repository};
 use std::thread;
 
 fn auth_callbacks<'a>(attempt: AuthAttempt, config: git2::Config) -> RemoteCallbacks<'a> {
@@ -33,7 +32,7 @@ pub fn push_branch(repo_path: &str, remote_name: &str, branch: &str, force: bool
     thread::spawn(move || {
         let attempt = AuthAttempt::new(auth_session, network::PUSH());
         let result = (|| -> Result<(), git2::Error> {
-            let repo = open(&repo_path)?;
+            let repo = Repository::open(&repo_path)?;
             let mut remote = repo.find_remote(&remote_name)?;
             let config = repo.config()?;
 
@@ -62,7 +61,7 @@ pub fn push_tags(repo_path: &str, remote_name: &str, auth_session: AuthSession) 
     thread::spawn(move || {
         let attempt = AuthAttempt::new(auth_session, network::PUSH_TAGS());
         let result = (|| -> Result<(), git2::Error> {
-            let repo = open(&repo_path)?;
+            let repo = Repository::open(&repo_path)?;
             let mut remote = repo.find_remote(&remote_name)?;
             let config = repo.config()?;
 
@@ -94,7 +93,7 @@ pub fn delete_remote_branch(repo_path: &str, remote_name: &str, branch: &str, au
     thread::spawn(move || {
         let attempt = AuthAttempt::new(auth_session, network::DELETE_REMOTE_BRANCH());
         let result = (|| -> Result<(), git2::Error> {
-            let repo = open(&repo_path)?;
+            let repo = Repository::open(&repo_path)?;
             let mut remote = repo.find_remote(&remote_name)?;
             let config = repo.config()?;
 

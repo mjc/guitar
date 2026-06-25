@@ -37,29 +37,13 @@ pub(crate) fn gix_error(error: impl std::fmt::Display) -> git2::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use git2::{Repository, Signature};
-    use std::{fs, path::Path, process::Command};
-
-    fn commit_file(repo: &Repository, path: &str, contents: &str, message: &str) {
-        let workdir = repo.workdir().unwrap();
-        fs::write(workdir.join(path), contents).unwrap();
-
-        let mut index = repo.index().unwrap();
-        index.add_path(Path::new(path)).unwrap();
-        index.write().unwrap();
-        let tree_oid = index.write_tree().unwrap();
-        let tree = repo.find_tree(tree_oid).unwrap();
-        let sig = Signature::now("Test User", "test@example.com").unwrap();
-        let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
-        let parents = parent.iter().collect::<Vec<_>>();
-
-        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents).unwrap();
-    }
+    use crate::git::test_support::{commit_file, init_repo_at};
+    use std::process::Command;
 
     #[test]
     fn commit_graph_helper_uses_written_commit_graph() {
         let temp = tempfile::Builder::new().prefix("guitar-gix-commit-graph-").tempdir().unwrap();
-        let repo = Repository::init(temp.path()).unwrap();
+        let repo = init_repo_at(temp.path());
         commit_file(&repo, "one.txt", "one\n", "one");
         commit_file(&repo, "two.txt", "two\n", "two");
 
