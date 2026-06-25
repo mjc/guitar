@@ -45,22 +45,11 @@ fn set_branch_upstream(repo: &Repository, branch: &str, remote: &str, target: gi
 }
 
 #[test]
-fn create_branch_creates_local_branch_at_target() {
+fn create_branch_creates_local_branch_and_rejects_existing_branch() {
     let (_path, repo) = temp_repo("create");
     let oid = commit(&repo, "file.txt", "initial");
 
     create_branch(&repo, "feature", oid).unwrap();
-
-    assert_eq!(repo.find_branch("feature", BranchType::Local).unwrap().get().target(), Some(oid));
-}
-
-#[test]
-fn create_branch_rejects_existing_branch() {
-    let (_path, repo) = temp_repo("create-existing");
-    let oid = commit(&repo, "file.txt", "initial");
-    let target = repo.find_commit(oid).unwrap();
-    repo.branch("feature", &target, false).unwrap();
-
     assert!(create_branch(&repo, "feature", oid).is_err());
     assert_eq!(repo.find_branch("feature", BranchType::Local).unwrap().get().target(), Some(oid));
 }
@@ -133,34 +122,16 @@ fn rejects_empty_invalid_unchanged_and_existing_names() {
 }
 
 #[test]
-fn delete_branch_removes_local_branch() {
-    let (_path, repo) = temp_repo("delete");
-    let oid = commit(&repo, "file.txt", "initial");
-    let target = repo.find_commit(oid).unwrap();
-    repo.branch("feature", &target, false).unwrap();
-
-    delete_branch(&repo, "feature").unwrap();
-
-    assert!(repo.find_branch("feature", BranchType::Local).is_err());
-}
-
-#[test]
-fn delete_current_branch_is_rejected() {
-    let (_path, repo) = temp_repo("delete-current");
-    commit(&repo, "file.txt", "initial");
-    let current_branch = get_current_branch(&repo).unwrap();
-
-    assert!(delete_branch(&repo, &current_branch).is_err());
-    assert!(repo.find_branch(&current_branch, BranchType::Local).is_ok());
-}
-
-#[test]
-fn delete_branch_removes_branch_config() {
+fn delete_branch_rejects_current_branch_and_removes_feature_config() {
     let (_path, repo) = temp_repo("delete-config");
     let oid = commit(&repo, "file.txt", "initial");
+    let current_branch = get_current_branch(&repo).unwrap();
     let target = repo.find_commit(oid).unwrap();
     repo.branch("feature", &target, false).unwrap();
     set_branch_upstream(&repo, "feature", "origin", oid);
+
+    assert!(delete_branch(&repo, &current_branch).is_err());
+    assert!(repo.find_branch(&current_branch, BranchType::Local).is_ok());
 
     delete_branch(&repo, "feature").unwrap();
 
