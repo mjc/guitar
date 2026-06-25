@@ -7,61 +7,97 @@ use crate::{
 };
 use gix::traverse::commit::{Either, find};
 use im::HashSet;
-use rustc_hash::FxHashSet;
-use std::{cmp::Ordering, collections::BinaryHeap};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashSet as StdHashSet},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WalkCommit {
+pub struct WalkedCommit {
     pub oid: gix::ObjectId,
     pub alias: u32,
-    parent_aliases: [u32; 2],
-    parent_len: u8,
+    parents: ParentAliases,
     pub commit_time: Option<i64>,
 }
 
-impl WalkCommit {
+impl WalkedCommit {
+    #[cfg(test)]
     fn new(oid: gix::ObjectId, alias: u32, parent_aliases: [u32; 2], parent_len: u8, commit_time: Option<i64>) -> Self {
-        Self { oid, alias, parent_aliases, parent_len, commit_time }
+        Self { oid, alias, parents: ParentAliases { aliases: parent_aliases, len: parent_len }, commit_time }
+    }
+
+    fn from_parents(oid: gix::ObjectId, alias: u32, parents: ParentAliases, commit_time: Option<i64>) -> Self {
+        Self { oid, alias, parents, commit_time }
     }
 
     pub fn is_parentless(&self) -> bool {
-        self.parent_len == 0
+        self.parents.is_empty()
     }
 
     pub fn first_parent_alias(&self) -> u32 {
-        (self.parent_len > 0).then_some(self.parent_aliases[0]).unwrap_or(NONE)
+        self.parents.get(0)
     }
 
     pub fn second_parent_alias(&self) -> u32 {
-        (self.parent_len > 1).then_some(self.parent_aliases[1]).unwrap_or(NONE)
+        self.parents.get(1)
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct QueueEntry {
+struct ParentAliases {
+    aliases: [u32; 2],
+    len: u8,
+}
+
+impl Default for ParentAliases {
+    fn default() -> Self {
+        Self { aliases: [NONE; 2], len: 0 }
+    }
+}
+
+impl ParentAliases {
+    fn push(&mut self, alias: u32) {
+        if let Some(slot) = self.aliases.get_mut(self.len as usize) {
+            *slot = alias;
+            self.len += 1;
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn get(&self, index: usize) -> u32 {
+        (index < self.len as usize).then_some(self.aliases[index]).unwrap_or(NONE)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PendingCommit {
     commit_time: i64,
     oid: gix::ObjectId,
     alias: u32,
     graph_pos: Option<gix::commitgraph::Position>,
 }
 
-impl Ord for QueueEntry {
+impl Ord for PendingCommit {
     fn cmp(&self, other: &Self) -> Ordering {
         self.commit_time.cmp(&other.commit_time)
     }
 }
 
-impl PartialOrd for QueueEntry {
+impl PartialOrd for PendingCommit {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-struct CommitWalk {
-    queue: BinaryHeap<QueueEntry>,
+struct CommitCursor {
+    queue: BinaryHeap<PendingCommit>,
     seen: SeenCommits,
     objects: gix::OdbHandle,
     commit_graph: Option<gix::commitgraph::Graph>,
+    // gix object APIs require Vec<u8> scratch buffers; these are reused for the whole cursor.
     commit_buf: Vec<u8>,
     time_buf: Vec<u8>,
 }
@@ -69,27 +105,25 @@ struct CommitWalk {
 #[derive(Default)]
 struct SeenCommits {
     graph_positions: Vec<u64>,
-    loose_oids: FxHashSet<gix::ObjectId>,
+    loose_oids: StdHashSet<gix::ObjectId>,
 }
 
 impl SeenCommits {
     fn new(commit_graph: Option<&gix::commitgraph::Graph>, loose_capacity: usize) -> Self {
         let graph_positions = commit_graph.map_or_else(Vec::new, |graph| vec![0; bit_words(graph.num_commits() as usize)]);
-        Self { graph_positions, loose_oids: FxHashSet::with_capacity_and_hasher(loose_capacity, Default::default()) }
+        Self { graph_positions, loose_oids: StdHashSet::with_capacity(loose_capacity) }
     }
 
     fn insert_graph_pos(&mut self, pos: gix::commitgraph::Position) -> bool {
         let pos = pos.0 as usize;
         let word = pos / u64::BITS as usize;
         let mask = 1u64 << (pos % u64::BITS as usize);
-        let Some(bits) = self.graph_positions.get_mut(word) else {
+        let Some(word_bits) = self.graph_positions.get_mut(word) else {
             return false;
         };
-        if *bits & mask != 0 {
-            return false;
-        }
-        *bits |= mask;
-        true
+        let was_seen = *word_bits & mask != 0;
+        *word_bits |= mask;
+        !was_seen
     }
 
     fn insert_loose_oid(&mut self, oid: gix::ObjectId) -> bool {
@@ -101,10 +135,10 @@ fn bit_words(bits: usize) -> usize {
     bits.div_ceil(u64::BITS as usize)
 }
 
-impl CommitWalk {
+impl CommitCursor {
     fn new(repo: &gix::Repository, tips: Vec<(gix::ObjectId, u32)>) -> Result<Self, git2::Error> {
         let commit_graph = commit_graph_if_available(repo);
-        let mut walk = Self {
+        let mut cursor = Self {
             queue: BinaryHeap::with_capacity(tips.len()),
             seen: SeenCommits::new(commit_graph.as_ref(), tips.len()),
             objects: repo.objects.clone(),
@@ -114,110 +148,89 @@ impl CommitWalk {
         };
 
         for (tip, alias) in tips {
-            walk.enqueue(tip, alias)?;
+            cursor.enqueue(tip, alias)?;
         }
 
-        Ok(walk)
+        Ok(cursor)
     }
 
     fn enqueue(&mut self, oid: gix::ObjectId, alias: u32) -> Result<(), git2::Error> {
-        enqueue_with(&mut self.queue, &mut self.seen, &self.objects, self.commit_graph.as_ref(), &mut self.time_buf, oid, alias)
+        enqueue_commit(&mut self.queue, &mut self.seen, &self.objects, self.commit_graph.as_ref(), &mut self.time_buf, oid, alias)
     }
 
-    fn next_commit(&mut self) -> Option<WalkCommit> {
+    fn next_commit(&mut self) -> Option<WalkedCommit> {
         self.next_commit_with_aliases(None)
     }
 
-    fn next_commit_aliased(&mut self, oids: &mut Oids) -> Option<WalkCommit> {
+    fn next_commit_aliased(&mut self, oids: &mut Oids) -> Option<WalkedCommit> {
         self.next_commit_with_aliases(Some(oids))
     }
 
-    fn next_commit_with_aliases(&mut self, mut oids: Option<&mut Oids>) -> Option<WalkCommit> {
-        while let Some(QueueEntry { commit_time, oid, alias, graph_pos }) = self.queue.pop() {
-            if let (Some(cache), Some(pos)) = (self.commit_graph.as_ref(), graph_pos) {
-                let commit = cache.commit_at(pos);
-                let mut parent_aliases = [NONE; 2];
-                let mut parent_len = 0u8;
-                let mut had_parent_error = false;
-                let queue = &mut self.queue;
-                let seen = &mut self.seen;
-                for parent_pos in commit.iter_parents() {
-                    let Ok(parent_pos) = parent_pos else {
-                        had_parent_error = true;
-                        break;
-                    };
-                    let parent = cache.commit_at(parent_pos);
-                    let parent_id = parent.id().to_owned();
-                    let parent_alias = oids.as_mut().map_or(NONE, |oids| oids.get_alias_by_oid(parent_id));
-                    if parent_len < 2 {
-                        parent_aliases[parent_len as usize] = parent_alias;
-                        parent_len += 1;
-                    }
-                    let _ = enqueue_graph_position(queue, seen, cache, parent_pos, parent_id, parent_alias);
-                }
-                if had_parent_error {
-                    continue;
-                }
-                return Some(WalkCommit::new(oid, alias, parent_aliases, parent_len, Some(commit_time)));
+    fn next_commit_with_aliases(&mut self, aliases: Option<&mut Oids>) -> Option<WalkedCommit> {
+        let mut aliases = aliases;
+        loop {
+            let entry = self.queue.pop()?;
+            if let Some(commit) = self.commit_from_entry(entry, aliases.as_deref_mut()) {
+                return Some(commit);
             }
+        }
+    }
 
-            let commit = match find(self.commit_graph.as_ref(), &self.objects, oid.as_ref(), &mut self.commit_buf).map_err(gix_error) {
-                Ok(Either::CachedCommit(commit)) => {
-                    let mut parent_aliases = [NONE; 2];
-                    let mut parent_len = 0u8;
-                    let mut had_parent_error = false;
-                    let cache = self.commit_graph.as_ref().expect("cached commits are backed by a commit graph");
-                    let queue = &mut self.queue;
-                    let seen = &mut self.seen;
-                    for parent_pos in commit.iter_parents() {
-                        let Ok(parent_pos) = parent_pos else {
-                            had_parent_error = true;
-                            break;
-                        };
-                        let parent = cache.commit_at(parent_pos);
-                        let parent_id = parent.id().to_owned();
-                        let parent_alias = oids.as_mut().map_or(NONE, |oids| oids.get_alias_by_oid(parent_id));
-                        if parent_len < 2 {
-                            parent_aliases[parent_len as usize] = parent_alias;
-                            parent_len += 1;
-                        }
-                        let _ = enqueue_graph_position(queue, seen, cache, parent_pos, parent_id, parent_alias);
-                    }
-                    if had_parent_error {
-                        continue;
-                    }
-                    WalkCommit::new(oid, alias, parent_aliases, parent_len, Some(commit_time))
-                },
-                Ok(Either::CommitRefIter(iter)) => {
-                    let mut parent_aliases = [NONE; 2];
-                    let mut parent_len = 0u8;
-                    let queue = &mut self.queue;
-                    let seen = &mut self.seen;
-                    let objects = &self.objects;
-                    let commit_graph = self.commit_graph.as_ref();
-                    let time_buf = &mut self.time_buf;
-                    for parent_id in iter.parent_ids() {
-                        let parent_alias = oids.as_mut().map_or(NONE, |oids| oids.get_alias_by_oid(parent_id));
-                        if parent_len < 2 {
-                            parent_aliases[parent_len as usize] = parent_alias;
-                            parent_len += 1;
-                        }
-                        let _ = enqueue_with(queue, seen, objects, commit_graph, time_buf, parent_id, parent_alias);
-                    }
-                    WalkCommit::new(oid, alias, parent_aliases, parent_len, Some(commit_time))
-                },
-                Err(_) => continue,
-            };
+    fn commit_from_entry(&mut self, entry: PendingCommit, aliases: Option<&mut Oids>) -> Option<WalkedCommit> {
+        let PendingCommit { commit_time, oid, alias, graph_pos } = entry;
 
-            return Some(commit);
+        if let (Some(graph), Some(pos)) = (self.commit_graph.as_ref(), graph_pos) {
+            let commit = graph.commit_at(pos);
+            let parents = graph_parent_aliases(&mut self.queue, &mut self.seen, graph, commit, aliases)?;
+            return Some(WalkedCommit::from_parents(oid, alias, parents, Some(commit_time)));
         }
 
-        None
+        match find(self.commit_graph.as_ref(), &self.objects, oid.as_ref(), &mut self.commit_buf).map_err(gix_error).ok()? {
+            Either::CachedCommit(commit) => {
+                let graph = self.commit_graph.as_ref().expect("cached commits are backed by a commit graph");
+                let parents = graph_parent_aliases(&mut self.queue, &mut self.seen, graph, commit, aliases)?;
+                Some(WalkedCommit::from_parents(oid, alias, parents, Some(commit_time)))
+            },
+            Either::CommitRefIter(iter) => {
+                let parents = loose_parent_aliases(&mut self.queue, &mut self.seen, &self.objects, self.commit_graph.as_ref(), &mut self.time_buf, iter.parent_ids(), aliases);
+                Some(WalkedCommit::from_parents(oid, alias, parents, Some(commit_time)))
+            },
+        }
     }
 }
 
-fn enqueue_with(
-    queue: &mut BinaryHeap<QueueEntry>, seen: &mut SeenCommits, objects: &gix::OdbHandle, commit_graph: Option<&gix::commitgraph::Graph>, time_buf: &mut Vec<u8>, oid: gix::ObjectId, alias: u32,
+fn graph_parent_aliases(
+    queue: &mut BinaryHeap<PendingCommit>, seen: &mut SeenCommits, graph: &gix::commitgraph::Graph, commit: gix::commitgraph::file::Commit<'_>, mut aliases: Option<&mut Oids>,
+) -> Option<ParentAliases> {
+    commit.iter_parents().try_fold(ParentAliases::default(), |mut parents, parent_pos| {
+        let parent_pos = parent_pos.ok()?;
+        let parent = graph.commit_at(parent_pos);
+        let parent_oid = parent.id().to_owned();
+        let parent_alias = alias_for(aliases.as_deref_mut(), parent_oid);
+        parents.push(parent_alias);
+        let _ = enqueue_graph_position(queue, seen, graph, parent_pos, parent_oid, parent_alias);
+        Some(parents)
+    })
+}
+
+fn loose_parent_aliases(
+    queue: &mut BinaryHeap<PendingCommit>, seen: &mut SeenCommits, objects: &gix::OdbHandle, commit_graph: Option<&gix::commitgraph::Graph>, time_buf: &mut Vec<u8>,
+    parent_ids: impl IntoIterator<Item = gix::ObjectId>, mut aliases: Option<&mut Oids>,
+) -> ParentAliases {
+    parent_ids.into_iter().fold(ParentAliases::default(), |mut parents, parent_oid| {
+        let parent_alias = alias_for(aliases.as_deref_mut(), parent_oid);
+        parents.push(parent_alias);
+        let _ = enqueue_commit(queue, seen, objects, commit_graph, time_buf, parent_oid, parent_alias);
+        parents
+    })
+}
+
+fn alias_for(aliases: Option<&mut Oids>, oid: gix::ObjectId) -> u32 {
+    aliases.map_or(NONE, |oids| oids.get_alias_by_oid(oid))
+}
+
+fn enqueue_commit(
+    queue: &mut BinaryHeap<PendingCommit>, seen: &mut SeenCommits, objects: &gix::OdbHandle, commit_graph: Option<&gix::commitgraph::Graph>, time_buf: &mut Vec<u8>, oid: gix::ObjectId, alias: u32,
 ) -> Result<(), git2::Error> {
     if let Some(graph) = commit_graph
         && let Some(pos) = graph.lookup(oid.as_ref())
@@ -233,91 +246,81 @@ fn enqueue_with(
         Either::CommitRefIter(iter) => iter.committer().map_err(gix_error)?.seconds(),
     };
 
-    queue.push(QueueEntry { commit_time, oid, alias, graph_pos: None });
+    queue.push(PendingCommit { commit_time, oid, alias, graph_pos: None });
     Ok(())
 }
 
 fn enqueue_graph_position(
-    queue: &mut BinaryHeap<QueueEntry>, seen: &mut SeenCommits, graph: &gix::commitgraph::Graph, pos: gix::commitgraph::Position, oid: gix::ObjectId, alias: u32,
+    queue: &mut BinaryHeap<PendingCommit>, seen: &mut SeenCommits, graph: &gix::commitgraph::Graph, pos: gix::commitgraph::Position, oid: gix::ObjectId, alias: u32,
 ) -> Result<(), git2::Error> {
     if !seen.insert_graph_pos(pos) {
         return Ok(());
     }
     let commit_time = graph.commit_at(pos).committer_timestamp() as i64;
-    queue.push(QueueEntry { commit_time, oid, alias, graph_pos: Some(pos) });
+    queue.push(PendingCommit { commit_time, oid, alias, graph_pos: Some(pos) });
     Ok(())
 }
 
 // Own a lazy commit cursor so history pages don't precompute the entire graph.
 pub struct Batcher {
-    walk: Option<CommitWalk>,
+    cursor: Option<CommitCursor>,
 }
 
 impl Batcher {
     pub fn from_tips(repo: &gix::Repository, tips: Vec<gix::ObjectId>) -> Result<Self, git2::Error> {
-        Ok(Self { walk: Some(Self::walk_from_tips(repo, tips)?) })
+        Ok(Self { cursor: Some(Self::cursor_from_tips(repo, tips)?) })
     }
 
     pub fn from_tips_with_oids(repo: &gix::Repository, tips: Vec<gix::ObjectId>, oids: &mut Oids) -> Result<Self, git2::Error> {
         oids.reserve_aliases(tips.len());
-        Ok(Self { walk: Some(Self::walk_from_aliased_tips(repo, tips.into_iter().map(|oid| (oid, oids.get_alias_by_oid(oid))).collect())?) })
+        Ok(Self { cursor: Some(Self::cursor_from_aliased_tips(repo, tips.into_iter().map(|oid| (oid, oids.get_alias_by_oid(oid))).collect())?) })
     }
 
     // Build the initial commit cursor from all visible local and remote branch tips.
     pub fn new<I: IntoIterator<Item = O>, O: IntoGixOid>(repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: I) -> Result<Self, git2::Error> {
-        let walk = Self::build(repo, hidden_branch_names, extra_roots)?;
-        Ok(Self { walk: Some(walk) })
+        let cursor = Self::build(repo, hidden_branch_names, extra_roots)?;
+        Ok(Self { cursor: Some(cursor) })
     }
 
     // Recreate the cursor after branch filters, fetches, or repository state changes.
     pub fn reset<I: IntoIterator<Item = O>, O: IntoGixOid>(&mut self, repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: I) -> Result<(), git2::Error> {
-        self.walk = Some(Self::build(repo, hidden_branch_names, extra_roots)?);
+        self.cursor = Some(Self::build(repo, hidden_branch_names, extra_roots)?);
         Ok(())
     }
 
     // Pull the next page, dropping commits the object database cannot resolve.
-    pub fn next(&mut self, count: usize) -> Vec<WalkCommit> {
+    pub fn next(&mut self, count: usize) -> Vec<WalkedCommit> {
         let mut page = Vec::with_capacity(count);
         self.next_into(count, &mut page);
         page
     }
 
     // Pull the next page into an existing output buffer to avoid a temporary page allocation.
-    pub fn next_into(&mut self, count: usize, out: &mut Vec<WalkCommit>) -> usize {
-        let before = out.len();
-        let Some(walk) = self.walk.as_mut() else {
-            return 0;
-        };
-
-        while out.len() - before < count {
-            let Some(info) = walk.next_commit() else {
-                self.walk = None;
-                break;
-            };
-            out.push(info);
-        }
-        out.len() - before
+    pub fn next_into(&mut self, count: usize, out: &mut Vec<WalkedCommit>) -> usize {
+        self.take_into(count, out, CommitCursor::next_commit)
     }
 
-    pub fn next_aliased_into(&mut self, count: usize, out: &mut Vec<WalkCommit>, oids: &mut Oids) -> usize {
-        let before = out.len();
-        let Some(walk) = self.walk.as_mut() else {
-            return 0;
-        };
-
+    pub fn next_aliased_into(&mut self, count: usize, out: &mut Vec<WalkedCommit>, oids: &mut Oids) -> usize {
         oids.reserve_aliases(count.saturating_mul(2));
-        while out.len() - before < count {
-            let Some(info) = walk.next_commit_aliased(oids) else {
-                self.walk = None;
-                break;
-            };
-            out.push(info);
-        }
-        out.len() - before
+        self.take_into(count, out, |cursor| cursor.next_commit_aliased(oids))
     }
 
-    fn build<I: IntoIterator<Item = O>, O: IntoGixOid>(repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: I) -> Result<CommitWalk, git2::Error> {
-        let mut pushed: FxHashSet<gix::ObjectId> = FxHashSet::default();
+    fn take_into(&mut self, count: usize, out: &mut Vec<WalkedCommit>, mut next: impl FnMut(&mut CommitCursor) -> Option<WalkedCommit>) -> usize {
+        let before = out.len();
+        let Some(cursor) = self.cursor.as_mut() else {
+            return 0;
+        };
+
+        out.extend(std::iter::from_fn(|| next(cursor)).take(count));
+        let fetched = out.len() - before;
+        if fetched < count {
+            self.cursor = None;
+        }
+        fetched
+    }
+
+    fn build<I: IntoIterator<Item = O>, O: IntoGixOid>(repo: &gix::Repository, hidden_branch_names: &HashSet<String>, extra_roots: I) -> Result<CommitCursor, git2::Error> {
+        let mut pushed: StdHashSet<gix::ObjectId> = StdHashSet::new();
         let mut tips: Vec<gix::ObjectId> = Vec::new();
 
         for_each_branch_tip(repo, |_, name, oid| {
@@ -329,15 +332,15 @@ impl Batcher {
 
         tips.extend(extra_roots.into_iter().map(IntoGixOid::into_gix_oid).filter(|oid| pushed.insert(*oid)));
 
-        Self::walk_from_tips(repo, tips)
+        Self::cursor_from_tips(repo, tips)
     }
 
-    fn walk_from_tips(repo: &gix::Repository, tips: Vec<gix::ObjectId>) -> Result<CommitWalk, git2::Error> {
-        Self::walk_from_aliased_tips(repo, tips.into_iter().map(|oid| (oid, NONE)).collect())
+    fn cursor_from_tips(repo: &gix::Repository, tips: Vec<gix::ObjectId>) -> Result<CommitCursor, git2::Error> {
+        Self::cursor_from_aliased_tips(repo, tips.into_iter().map(|oid| (oid, NONE)).collect())
     }
 
-    fn walk_from_aliased_tips(repo: &gix::Repository, tips: Vec<(gix::ObjectId, u32)>) -> Result<CommitWalk, git2::Error> {
-        CommitWalk::new(repo, tips)
+    fn cursor_from_aliased_tips(repo: &gix::Repository, tips: Vec<(gix::ObjectId, u32)>) -> Result<CommitCursor, git2::Error> {
+        CommitCursor::new(repo, tips)
     }
 }
 
@@ -400,7 +403,7 @@ mod tests {
         let first = commit_file(&repo, "first.txt", "first", "first");
         let second = commit_file(&repo, "second.txt", "second", "second");
         let third = commit_file(&repo, "third.txt", "third", "third");
-        let sentinel = WalkCommit::new(git2_to_gix_oid(Oid::zero()), NONE, [NONE; 2], 0, None);
+        let sentinel = WalkedCommit::new(git2_to_gix_oid(Oid::zero()), NONE, [NONE; 2], 0, None);
         let gix_repo = gix::open(dir.join("repo")).unwrap();
         let mut batcher = Batcher::new(&gix_repo, &HashSet::new(), vec![third]).unwrap();
         let mut out = vec![sentinel.clone()];
