@@ -120,6 +120,7 @@ fn sync_submodule_errors_for_unknown_submodule() {
 
     let error = sync_submodule(&parent, "deps/missing").unwrap_err();
     assert!(error.to_string().contains("Submodule not found"));
+    assert!(matches!(update_submodule_result(parent.workdir().unwrap(), "deps/missing"), NetworkResult::Failure(_)));
 }
 
 #[test]
@@ -160,14 +161,6 @@ fn update_submodule_refreshes_an_initialized_checkout() {
     assert_eq!(submodule.workdir, Some(git2_to_gix_oid(advanced)));
     let sub_repo = Repository::open(clone.workdir().unwrap().join("deps/child")).unwrap();
     assert_eq!(sub_repo.head().unwrap().peel_to_commit().unwrap().id(), advanced);
-}
-
-#[test]
-fn update_submodule_errors_for_unknown_submodule() {
-    let dir = TestDir::new("update-missing");
-    let parent = init_repo_at(dir.path().join("parent").as_path());
-
-    assert!(matches!(update_submodule_result(parent.workdir().unwrap(), "deps/missing"), NetworkResult::Failure(_)));
 }
 
 #[test]
