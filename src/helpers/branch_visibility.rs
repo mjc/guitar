@@ -1,15 +1,14 @@
 use facet::Facet;
 use git2::Repository;
+use gix::bstr::ByteSlice;
 use im::HashSet;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-use gix::bstr::ByteSlice;
-
-const LOCAL_BRANCH_PREFIX: &str = "refs/heads/";
-const REMOTE_BRANCH_PREFIX: &str = "refs/remotes/";
+const LOCAL_BRANCH_PREFIX: &[u8] = b"refs/heads/";
+const REMOTE_BRANCH_PREFIX: &[u8] = b"refs/remotes/";
 
 #[derive(Facet, Clone, Default)]
 pub struct RepositoryBranchVisibility {
@@ -32,33 +31,23 @@ pub fn branch_visibility_config_path() -> PathBuf {
 }
 
 pub fn current_branch_names(repo: &Repository) -> HashSet<String> {
-    let mut names = HashSet::new();
+    let path = repo.workdir().unwrap_or(repo.path());
+    let Ok(repo) = gix::open(path) else {
+        return HashSet::new();
+    };
+    current_branch_names_from_repo(&repo)
+}
+
+pub fn current_branch_names_from_repo(repo: &gix::Repository) -> HashSet<String> {
     let Ok(references) = repo.references() else {
-        return names;
+        return HashSet::new();
     };
 
-    for reference in references.flatten() {
-        if reference.target().is_none() {
-            continue;
-        }
-
-        let Some(name) = reference.name() else {
-            continue;
-        };
-
-        if let Some(branch_name) = branch_name_from_ref(name.as_bytes()) {
-            names.insert(branch_name.to_string());
-        }
-    }
-
-    names
+    references.all().into_iter().flatten().flatten().filter_map(|reference| branch_name_from_ref(reference.name().as_bstr()).map(str::to_string)).collect()
 }
 
 pub(crate) fn branch_name_from_ref(name: &[u8]) -> Option<&str> {
-    name.strip_prefix(LOCAL_BRANCH_PREFIX.as_bytes())
-        .or_else(|| name.strip_prefix(REMOTE_BRANCH_PREFIX.as_bytes()))
-        .filter(|branch_name| !branch_name.is_empty())
-        .and_then(|branch_name| branch_name.to_str().ok())
+    name.strip_prefix(LOCAL_BRANCH_PREFIX).or_else(|| name.strip_prefix(REMOTE_BRANCH_PREFIX)).filter(|branch_name| !branch_name.is_empty()).and_then(|branch_name| branch_name.to_str().ok())
 }
 
 pub fn prune_hidden_branches(hidden: &mut HashSet<String>, current: &HashSet<String>) -> bool {
