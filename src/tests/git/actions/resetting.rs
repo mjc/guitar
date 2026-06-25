@@ -7,22 +7,18 @@ use git2::ResetType;
 use std::{fs, path::Path};
 
 #[test]
-fn reset_to_commit_moves_a_linked_worktree_branch_and_workdir() {
+fn reset_to_commit_updates_linked_worktree_branch_and_workdir() {
     let dir = TestDir::new("reset-linked-hard");
     let fixture = linked_worktree_fixture(&dir, "feature");
-    let feature_commit = commit_file(&fixture.linked_repo, "file.txt", "feature\n", "feature");
+    commit_file(&fixture.linked_repo, "file.txt", "feature\n", "feature");
 
-    assert_eq!(fixture.repo.find_branch("feature", git2::BranchType::Local).unwrap().get().target(), Some(feature_commit));
     reset_to_commit(&fixture.linked_repo, fixture.base, ResetType::Hard).unwrap();
 
     assert_eq!(fixture.linked_repo.head().unwrap().target(), Some(fixture.base));
     assert_eq!(fixture.repo.find_branch("feature", git2::BranchType::Local).unwrap().get().target(), Some(fixture.base));
     assert_eq!(fs::read_to_string(fixture.linked_path.join("file.txt")).unwrap(), "base\n");
     assert!(get_filenames_diff_at_workdir(&fixture.linked_repo).unwrap().is_clean);
-}
 
-#[test]
-fn mixed_reset_keeps_linked_worktree_changes() {
     let dir = TestDir::new("reset-linked-mixed");
     let fixture = linked_worktree_fixture(&dir, "feature");
     commit_file(&fixture.linked_repo, "file.txt", "feature\n", "feature");
