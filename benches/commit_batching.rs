@@ -3,10 +3,13 @@ mod fixtures;
 use divan::{Bencher, black_box};
 use fixtures::{RepoWalkFixture, graph_service_fixture, repo_walk_hidden_branches_fixture, repo_walk_linear_fixture, repo_walk_many_refs_fixture, repo_walk_merge_fixture};
 use guitar::{
-    core::{batcher::Batcher, oids::Oids, walker::Walker},
+    core::{
+        batcher::{Batcher, WalkCommit},
+        oids::Oids,
+        walker::Walker,
+    },
     git::queries::commits::get_sorted_oids,
 };
-use std::{cell::RefCell, rc::Rc};
 
 fn main() {
     divan::main();
@@ -15,27 +18,28 @@ fn main() {
 struct CommitBatchFixture {
     _fixture: RepoWalkFixture,
     batcher: Batcher,
-    _repo: Rc<RefCell<git2::Repository>>,
+    _repo: gix::Repository,
+    scratch: Vec<WalkCommit>,
     amount: usize,
     expected_commits: usize,
 }
 
 fn commit_batch_fixture(fixture: RepoWalkFixture) -> CommitBatchFixture {
-    let repo = Rc::new(RefCell::new(git2::Repository::open(&fixture.path).unwrap()));
-    let batcher = Batcher::new(repo.clone(), &fixture.hidden_branch_names, &[]).unwrap();
+    let repo = gix::open(&fixture.path).unwrap();
+    let batcher = Batcher::new(&repo, &fixture.hidden_branch_names, std::iter::empty::<gix::ObjectId>()).unwrap();
     let amount = fixture.amount;
     let expected_commits = fixture.expected_commits;
 
-    CommitBatchFixture { _fixture: fixture, batcher, _repo: repo, amount, expected_commits }
+    CommitBatchFixture { _fixture: fixture, batcher, _repo: repo, scratch: Vec::with_capacity(amount), amount, expected_commits }
 }
 
-fn sorted_oid_pages(fixture: CommitBatchFixture) -> usize {
+fn sorted_oid_pages(mut fixture: CommitBatchFixture) -> usize {
     let mut oids = Oids::default();
     let mut sorted = Vec::new();
 
     loop {
         let before = sorted.len();
-        get_sorted_oids(&fixture.batcher, &mut oids, &mut sorted, fixture.amount);
+        get_sorted_oids(&mut fixture.batcher, &mut oids, &mut sorted, fixture.amount, &mut fixture.scratch);
         if sorted.len() == before {
             break;
         }
