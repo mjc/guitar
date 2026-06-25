@@ -1,13 +1,9 @@
 use super::*;
-use std::{
-    fs,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use crate::git::test_support::temp_json_path;
+use std::{fs, path::Path};
 
 fn temp_config_path(name: &str) -> PathBuf {
-    let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("guitar-branch-visibility-{name}-{id}.json"))
+    temp_json_path("guitar-branch-visibility", name)
 }
 
 fn hidden(names: &[&str]) -> HashSet<String> {
