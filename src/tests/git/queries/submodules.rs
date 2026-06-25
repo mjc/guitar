@@ -68,21 +68,17 @@ fn detects_committed_gitmodules_without_workdir_file() {
 }
 
 #[test]
-fn gitmodules_index_scan_matches_across_buffer_boundary() {
+fn gitmodules_index_scan_matches_across_buffer_boundary_and_rejects_missing_path() {
     let dir = TestDir::new("gitmodules-scan-boundary");
-    let path = dir.path().join("index");
+    let path = dir.path().join("with-gitmodules");
     let split = INDEX_SCAN_BUFFER - 4;
     let mut bytes = vec![b'x'; split];
     bytes.extend_from_slice(GITMODULES_PATH);
     fs::write(&path, bytes).unwrap();
 
     assert!(file_contains_gitmodules_path(&path));
-}
 
-#[test]
-fn gitmodules_index_scan_returns_false_without_path() {
-    let dir = TestDir::new("gitmodules-scan-missing");
-    let path = dir.path().join("index");
+    let path = dir.path().join("without-gitmodules");
     fs::write(&path, vec![b'x'; INDEX_SCAN_BUFFER + 64]).unwrap();
 
     assert!(!file_contains_gitmodules_path(&path));

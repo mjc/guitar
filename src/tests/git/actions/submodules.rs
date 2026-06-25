@@ -124,7 +124,7 @@ fn sync_submodule_errors_for_unknown_submodule() {
 }
 
 #[test]
-fn update_submodule_initializes_plain_clone() {
+fn update_submodule_initializes_plain_clone_then_refreshes_checkout() {
     let dir = TestDir::new("update");
     let (parent, child_path) = parent_with_submodule(&dir);
     let parent_entry = list_submodules(&parent).unwrap()[0].clone();
@@ -140,15 +140,6 @@ fn update_submodule_initializes_plain_clone() {
     assert!(submodule.is_open);
     assert_eq!(submodule.workdir, parent_entry.head);
     assert_eq!(submodule_remote_url(&clone, "deps/child"), child_path.to_str().unwrap());
-}
-
-#[test]
-fn update_submodule_refreshes_an_initialized_checkout() {
-    let dir = TestDir::new("update-refresh");
-    let (parent, child_path) = parent_with_submodule(&dir);
-    let clone_path = dir.path().join("clone");
-    let _clone = Repository::clone(parent.workdir().unwrap().to_str().unwrap(), &clone_path).unwrap();
-    assert!(matches!(update_submodule_result(&clone_path, "deps/child"), NetworkResult::Success));
 
     let advanced = commit_file(&Repository::open(&child_path).unwrap(), "file.txt", "changed\n", "advance child");
     stage_submodule_to_oid(&Repository::open(&clone_path).unwrap(), "deps/child", advanced);
