@@ -50,12 +50,6 @@ pub fn init_bare_repo_at(path: &Path) -> Repository {
     Repository::init_bare(path).unwrap()
 }
 
-pub fn clone_repo(source: &Path, target: &Path) -> Repository {
-    let repo = Repository::clone(source.to_str().unwrap(), target).unwrap();
-    configure_user(&repo);
-    repo
-}
-
 pub fn write_workdir_file(repo: &Repository, relative: &str, contents: &str) {
     let workdir = repo.workdir().unwrap();
     let full_path = workdir.join(relative);
@@ -94,10 +88,6 @@ pub fn create_branch(repo: &Repository, name: &str, target: Oid) {
 
 pub fn add_remote_path(repo: &Repository, name: &str, remote_path: &Path) {
     repo.remote(name, remote_path.to_str().unwrap()).unwrap();
-}
-
-pub fn add_remote_url(repo: &Repository, name: &str, remote_url: &str) {
-    repo.remote(name, remote_url).unwrap();
 }
 
 pub fn seed_remote(repo: &Repository, remote_name: &str, refspecs: &[&str]) {
