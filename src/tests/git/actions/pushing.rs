@@ -2,12 +2,12 @@ use super::*;
 use crate::git::{
     actions::tagging::tag,
     auth::{AuthSession, NetworkResult},
-    test_support::{TestDir, commit_file, create_branch, seed_remote, source_with_origin},
+    test_support::{TestDir, commit_file, create_branch, source_with_origin},
 };
 use git2::{ObjectType, Repository};
 
 #[test]
-fn push_branch_updates_the_remote_branch() {
+fn push_branch_updates_and_deletes_the_remote_branch() {
     let dir = TestDir::new("push-branch");
     let (source, remote_path) = source_with_origin(&dir);
     let commit = commit_file(&source, "file.txt", "source\n", "source");
@@ -18,6 +18,13 @@ fn push_branch_updates_the_remote_branch() {
 
     let remote = Repository::open(&remote_path).unwrap();
     assert_eq!(remote.find_reference("refs/heads/feature").unwrap().target(), Some(commit));
+    drop(remote);
+
+    let handle = delete_remote_branch(source.workdir().unwrap().to_str().unwrap(), "origin", "feature", AuthSession::default());
+    assert!(matches!(handle.join().unwrap(), NetworkResult::Success));
+
+    let remote = Repository::open(&remote_path).unwrap();
+    assert!(remote.find_reference("refs/heads/feature").is_err());
 }
 
 #[test]
@@ -37,19 +44,4 @@ fn push_tags_updates_remote_tags() {
     let remote = Repository::open(&remote_path).unwrap();
     assert!(remote.find_reference("refs/tags/v1.0.0").is_ok());
     assert!(remote.find_reference("refs/tags/v2.0.0").is_ok());
-}
-
-#[test]
-fn delete_remote_branch_removes_the_remote_ref() {
-    let dir = TestDir::new("delete-remote-branch");
-    let (source, remote_path) = source_with_origin(&dir);
-    let commit = commit_file(&source, "file.txt", "source\n", "source");
-    create_branch(&source, "feature", commit);
-    seed_remote(&source, "origin", &["refs/heads/feature:refs/heads/feature"]);
-
-    let handle = delete_remote_branch(source.workdir().unwrap().to_str().unwrap(), "origin", "feature", AuthSession::default());
-    assert!(matches!(handle.join().unwrap(), NetworkResult::Success));
-
-    let remote = Repository::open(&remote_path).unwrap();
-    assert!(remote.find_reference("refs/heads/feature").is_err());
 }
