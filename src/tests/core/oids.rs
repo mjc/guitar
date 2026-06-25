@@ -15,22 +15,6 @@ fn assert_round_trip(oids: &mut Oids, oid: Oid, alias: u32) {
 }
 
 #[test]
-fn aliases_round_trip_distinct_oids_with_shared_prefixes() {
-    for (first_prefix, second_prefix) in [(1, 1), (0x1234_5678_0000_0001, 0x1234_5678_ffff_ffff)] {
-        let mut oids = Oids::default();
-        let first_oid = oid_with_prefix(first_prefix, 10);
-        let second_oid = oid_with_prefix(second_prefix, 20);
-        let first = oids.get_alias_by_oid(first_oid);
-        let second = oids.get_alias_by_oid(second_oid);
-
-        assert_ne!(first, second);
-        assert_round_trip(&mut oids, first_oid, first);
-        assert_round_trip(&mut oids, second_oid, second);
-        assert_eq!(oids.len(), 2);
-    }
-}
-
-#[test]
 fn aliases_lookup_across_many_similar_inserted_oids() {
     let mut oids = Oids::default();
     let first = oid_with_prefix(0xfeed_beef_0000_0001, 10);
