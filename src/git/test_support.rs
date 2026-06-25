@@ -1,14 +1,12 @@
 use crate::git::actions::worktrees::create_worktree;
 use git2::{Oid, Repository};
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
-    process,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 pub struct TestDir {
-    path: PathBuf,
+    dir: tempfile::TempDir,
 }
 
 pub struct LinkedWorktreeFixture {
@@ -21,24 +19,16 @@ pub struct LinkedWorktreeFixture {
 
 impl TestDir {
     pub fn new(name: &str) -> Self {
-        let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let path = env::temp_dir().join(format!("guitar-test-support-{name}-{}-{suffix}", process::id()));
-        fs::create_dir_all(&path).unwrap();
-        Self { path }
+        let dir = tempfile::Builder::new().prefix(&format!("guitar-test-support-{name}-")).tempdir().unwrap();
+        Self { dir }
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.dir.path()
     }
 
     pub fn join(&self, path: impl AsRef<Path>) -> PathBuf {
-        self.path.join(path)
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        self.path().join(path)
     }
 }
 

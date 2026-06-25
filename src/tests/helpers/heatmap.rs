@@ -1,22 +1,10 @@
 use super::*;
 use crate::core::oids::git2_to_gix_oid as gix_oid;
 use git2::{IndexAddOption, Oid, Repository, Signature, Time};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::fs;
 
-fn temp_repo(name: &str) -> (PathBuf, Repository) {
-    let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("guitar-heatmap-{name}-{id}"));
-    fs::create_dir_all(&path).unwrap();
-    let repo = Repository::init(&path).unwrap();
-    (path, repo)
-}
-
-fn commit_at(repo: &Repository, path: &Path, name: &str, seconds: i64) -> Oid {
-    fs::write(path.join(name), name).unwrap();
+fn commit_at(repo: &Repository, name: &str, seconds: i64) -> Oid {
+    fs::write(repo.workdir().unwrap().join(name), name).unwrap();
 
     let mut index = repo.index().unwrap();
     index.add_all(["."], IndexAddOption::DEFAULT, None).unwrap();
@@ -31,7 +19,7 @@ fn commit_at(repo: &Repository, path: &Path, name: &str, seconds: i64) -> Oid {
 }
 
 struct HeatmapFixture {
-    path: PathBuf,
+    dir: tempfile::TempDir,
     today: i64,
     yesterday: i64,
     outside_grid: i64,
@@ -42,17 +30,18 @@ struct HeatmapFixture {
 }
 
 fn heatmap_fixture(name: &str) -> HeatmapFixture {
-    let (path, repo) = temp_repo(name);
+    let dir = tempfile::Builder::new().prefix(&format!("guitar-heatmap-{name}-")).tempdir().unwrap();
+    let repo = Repository::init(dir.path()).unwrap();
     let today = Utc::now().timestamp();
     let yesterday = today - 24 * 60 * 60;
     let outside_grid = today - ((TOTAL_DAYS as i64) + 10) * 24 * 60 * 60;
 
     HeatmapFixture {
-        first_today: commit_at(&repo, &path, "first-today.txt", today),
-        second_today: commit_at(&repo, &path, "second-today.txt", today),
-        yesterday_oid: commit_at(&repo, &path, "yesterday.txt", yesterday),
-        old: commit_at(&repo, &path, "old.txt", outside_grid),
-        path,
+        first_today: commit_at(&repo, "first-today.txt", today),
+        second_today: commit_at(&repo, "second-today.txt", today),
+        yesterday_oid: commit_at(&repo, "yesterday.txt", yesterday),
+        old: commit_at(&repo, "old.txt", outside_grid),
+        dir,
         today,
         yesterday,
         outside_grid,
@@ -62,7 +51,7 @@ fn heatmap_fixture(name: &str) -> HeatmapFixture {
 #[test]
 fn repo_heatmap_counts_recent_commits_and_stops_at_old_boundary() {
     let fixture = heatmap_fixture("repo");
-    let gix_repo = gix::open(&fixture.path).unwrap();
+    let gix_repo = gix::open(fixture.dir.path()).unwrap();
     let weekday_today = Utc::now().weekday().num_days_from_monday() as usize;
     let counts = commits_per_day(&gix_repo, [fixture.first_today, fixture.second_today, fixture.old].map(gix_oid));
     let stopped = commits_per_day(&gix_repo, [fixture.first_today, fixture.old, fixture.second_today].map(gix_oid));
@@ -78,7 +67,7 @@ fn repo_heatmap_counts_recent_commits_and_stops_at_old_boundary() {
 #[test]
 fn streamed_heatmap_matches_scanned_counts_and_filters_out_of_grid_dates() {
     let fixture = heatmap_fixture("streamed-counts");
-    let gix_repo = gix::open(&fixture.path).unwrap();
+    let gix_repo = gix::open(fixture.dir.path()).unwrap();
     let scanned = build_heatmap(&gix_repo, [fixture.first_today, fixture.yesterday_oid].map(gix_oid));
     let mut streamed = HeatmapCounts::default();
     streamed.add_commit_seconds(fixture.today);

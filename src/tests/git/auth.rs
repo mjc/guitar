@@ -1,14 +1,5 @@
 use super::*;
-use std::{
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-fn temp_home(name: &str) -> PathBuf {
-    let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("guitar-auth-{name}-{id}"))
-}
+use std::{fs, path::PathBuf};
 
 #[test]
 fn classifies_common_remote_url_shapes() {
@@ -68,7 +59,8 @@ fn session_stores_and_evicts_ssh_passphrase() {
 
 #[test]
 fn default_ssh_private_key_prefers_ed25519_then_ecdsa_then_rsa() {
-    let home = temp_home("ssh-key-order");
+    let home = tempfile::Builder::new().prefix("guitar-auth-ssh-key-order-").tempdir().unwrap();
+    let home = home.path();
     let ssh = home.join(".ssh");
     fs::create_dir_all(&ssh).unwrap();
 
@@ -87,8 +79,6 @@ fn default_ssh_private_key_prefers_ed25519_then_ecdsa_then_rsa() {
 
     fs::remove_file(&ecdsa).unwrap();
     assert_eq!(default_ssh_private_key_in(&home).as_deref(), Some(rsa.as_path()));
-
-    let _ = fs::remove_dir_all(home);
 }
 
 #[test]
