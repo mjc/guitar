@@ -1,12 +1,9 @@
 use super::*;
-use std::{
-    fs,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use crate::git::test_support::temp_json_path;
+use std::fs;
 
 fn temp_language_path(name: &str) -> std::path::PathBuf {
-    let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("guitar-language-{name}-{id}.json"))
+    temp_json_path("guitar-language", name)
 }
 
 #[test]

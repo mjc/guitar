@@ -1,41 +1,8 @@
 use crate::core::oids::git2_to_gix_oid;
 use crate::git::queries::reflogs::get_head_reflog_entries;
-use git2::Oid;
-use git2::{Repository, ResetType, Signature};
-use std::{
-    fs,
-    io::Write,
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-fn temp_repo(name: &str) -> (PathBuf, Repository) {
-    let id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("guitar-reflog-query-{name}-{id}"));
-    fs::create_dir_all(&path).unwrap();
-    let repo = Repository::init(&path).unwrap();
-    {
-        let mut config = repo.config().unwrap();
-        config.set_str("user.name", "Test User").unwrap();
-        config.set_str("user.email", "test@example.com").unwrap();
-    }
-    (path, repo)
-}
-
-fn commit(repo: &Repository, file: &str, message: &str) -> Oid {
-    let workdir = repo.workdir().unwrap().to_path_buf();
-    fs::write(workdir.join(file), message).unwrap();
-
-    let mut index = repo.index().unwrap();
-    index.add_path(Path::new(file)).unwrap();
-    index.write().unwrap();
-    let tree_oid = index.write_tree().unwrap();
-    let tree = repo.find_tree(tree_oid).unwrap();
-    let sig = Signature::now("Test User", "test@example.com").unwrap();
-    let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
-    let parents: Vec<&git2::Commit<'_>> = parent.iter().collect();
-    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents).unwrap()
-}
+use crate::git::test_support::{commit_file, temp_repo};
+use git2::{Oid, Repository, ResetType};
+use std::{fs, io::Write};
 
 fn append_reflog_entry(repo: &Repository, new_oid: Oid, message: &str) {
     let log_path = repo.path().join("logs/HEAD");
@@ -45,16 +12,17 @@ fn append_reflog_entry(repo: &Repository, new_oid: Oid, message: &str) {
 
 #[test]
 fn head_reflog_skips_entries_that_no_longer_point_to_commits() {
-    let (_path, repo) = temp_repo("skip-non-commit");
-    let base = commit(&repo, "file.txt", "base");
-    let lost = commit(&repo, "file.txt", "lost");
+    let (dir, repo) = temp_repo("skip-non-commit");
+    let path = dir.join("repo");
+    let base = commit_file(&repo, "file.txt", "base", "base");
+    let lost = commit_file(&repo, "file.txt", "lost", "lost");
     let base_commit = repo.find_commit(base).unwrap();
     repo.reset(base_commit.as_object(), ResetType::Hard, None).unwrap();
 
     let skipped_oid = repo.blob(b"skip-me").unwrap();
     append_reflog_entry(&repo, skipped_oid, "skip-me");
 
-    let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
+    let gix_repo = gix::open(path).unwrap();
     let entries = get_head_reflog_entries(&gix_repo).unwrap();
 
     assert!(entries.iter().any(|entry| entry.new_oid == git2_to_gix_oid(lost)));
@@ -65,7 +33,7 @@ fn head_reflog_skips_entries_that_no_longer_point_to_commits() {
 
 #[test]
 fn missing_head_reflog_returns_an_error() {
-    let (_path, repo) = temp_repo("missing");
-    let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
+    let (dir, _repo) = temp_repo("missing");
+    let gix_repo = gix::open(dir.join("repo")).unwrap();
     assert!(get_head_reflog_entries(&gix_repo).is_err());
 }
