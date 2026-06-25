@@ -8,9 +8,10 @@ use im::HashSet;
 use std::{collections::HashMap, fs};
 
 #[test]
-fn checkout_head_detaches_a_linked_worktree_and_leaves_the_branch_alone() {
+fn checkout_head_detaches_then_checkout_branch_switches_linked_worktree() {
     let dir = TestDir::new("checkout-linked-head");
     let fixture = linked_worktree_fixture(&dir, "feature");
+    create_branch(&fixture.repo, "release", fixture.base);
     let feature_commit = commit_file(&fixture.linked_repo, "file.txt", "feature\n", "feature");
 
     checkout_head(&fixture.linked_repo, fixture.base).unwrap();
@@ -19,14 +20,6 @@ fn checkout_head_detaches_a_linked_worktree_and_leaves_the_branch_alone() {
     assert!(!fixture.linked_repo.head().unwrap().is_branch());
     assert_eq!(fs::read_to_string(fixture.linked_path.join("file.txt")).unwrap(), "base\n");
     assert_eq!(fixture.repo.find_branch("feature", BranchType::Local).unwrap().get().target(), Some(feature_commit));
-}
-
-#[test]
-fn checkout_branch_switches_a_linked_worktree_to_an_existing_branch() {
-    let dir = TestDir::new("checkout-linked-branch");
-    let fixture = linked_worktree_fixture(&dir, "feature");
-    create_branch(&fixture.repo, "release", fixture.base);
-    let feature_commit = commit_file(&fixture.linked_repo, "file.txt", "feature\n", "feature");
 
     let mut hidden_branch_names = HashSet::new();
     let mut local = HashMap::new();
