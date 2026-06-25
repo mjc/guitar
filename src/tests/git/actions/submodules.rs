@@ -10,7 +10,7 @@ use crate::{
 };
 use git2::Repository;
 use gix::bstr::ByteSlice;
-use std::fs;
+use std::{fs, path::Path};
 
 fn rewrite_submodule_url(repo: &Repository, new_url: &str) {
     let gitmodules = repo.workdir().unwrap().join(".gitmodules");
@@ -30,6 +30,10 @@ fn stage_submodule_to_oid(repo: &Repository, name: &str, oid: git2::Oid) {
     let mut index = gix_repo.index_or_load_from_head_or_empty().unwrap().into_owned();
     stage_commit_pointer(&mut index, name.as_bytes().as_bstr(), git2_to_gix_oid(oid));
     write_index(&mut index).unwrap();
+}
+
+fn update_submodule_result(repo_path: &Path, name: &str) -> NetworkResult {
+    update_submodule(repo_path.to_str().unwrap(), name, Default::default()).join().unwrap()
 }
 
 #[test]
@@ -128,11 +132,7 @@ fn update_submodule_initializes_plain_clone() {
     assert!(!list_submodules(&clone).unwrap()[0].is_open);
     drop(clone);
 
-    let handle = update_submodule(clone_path.to_str().unwrap(), "deps/child", Default::default());
-    match handle.join().unwrap() {
-        NetworkResult::Success => {},
-        other => panic!("unexpected update result: {other:?}"),
-    }
+    assert!(matches!(update_submodule_result(&clone_path, "deps/child"), NetworkResult::Success));
 
     let clone = Repository::open(&clone_path).unwrap();
     let submodule = list_submodules(&clone).unwrap()[0].clone();
@@ -147,20 +147,12 @@ fn update_submodule_refreshes_an_initialized_checkout() {
     let (parent, child_path) = parent_with_submodule(&dir);
     let clone_path = dir.path().join("clone");
     let _clone = Repository::clone(parent.workdir().unwrap().to_str().unwrap(), &clone_path).unwrap();
-    let handle = update_submodule(clone_path.to_str().unwrap(), "deps/child", Default::default());
-    match handle.join().unwrap() {
-        NetworkResult::Success => {},
-        other => panic!("unexpected initial update result: {other:?}"),
-    }
+    assert!(matches!(update_submodule_result(&clone_path, "deps/child"), NetworkResult::Success));
 
     let advanced = commit_file(&Repository::open(&child_path).unwrap(), "file.txt", "changed\n", "advance child");
     stage_submodule_to_oid(&Repository::open(&clone_path).unwrap(), "deps/child", advanced);
 
-    let handle = update_submodule(clone_path.to_str().unwrap(), "deps/child", Default::default());
-    match handle.join().unwrap() {
-        NetworkResult::Success => {},
-        other => panic!("unexpected refresh update result: {other:?}"),
-    }
+    assert!(matches!(update_submodule_result(&clone_path, "deps/child"), NetworkResult::Success));
 
     let clone = Repository::open(&clone_path).unwrap();
     let submodule = list_submodules(&clone).unwrap()[0].clone();
@@ -175,11 +167,7 @@ fn update_submodule_errors_for_unknown_submodule() {
     let dir = TestDir::new("update-missing");
     let parent = init_repo_at(dir.path().join("parent").as_path());
 
-    let handle = update_submodule(parent.workdir().unwrap().to_str().unwrap(), "deps/missing", Default::default());
-    match handle.join().unwrap() {
-        NetworkResult::Failure(_) => {},
-        other => panic!("unexpected update result: {other:?}"),
-    }
+    assert!(matches!(update_submodule_result(parent.workdir().unwrap(), "deps/missing"), NetworkResult::Failure(_)));
 }
 
 #[test]
@@ -191,9 +179,5 @@ fn update_submodule_errors_for_unreachable_remote_url() {
     drop(clone);
     fs::remove_dir_all(&child_path).unwrap();
 
-    let handle = update_submodule(clone_path.to_str().unwrap(), "deps/child", Default::default());
-    match handle.join().unwrap() {
-        NetworkResult::Failure(_) => {},
-        other => panic!("unexpected update result: {other:?}"),
-    }
+    assert!(matches!(update_submodule_result(&clone_path, "deps/child"), NetworkResult::Failure(_)));
 }
