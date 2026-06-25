@@ -17,7 +17,11 @@ use crate::{
             tagging::untag,
         },
         auth::{AuthRequired, AuthSecret, NetworkResult},
-        queries::{commits::get_current_branch, remotes::effective_default_remote},
+        queries::{
+            commits::get_current_branch,
+            remotes::{effective_default_remote, effective_default_remote_from_remotes},
+            submodules::list_submodules,
+        },
     },
     helpers::{
         branch_visibility::save_branch_visibility,
@@ -32,7 +36,7 @@ impl App {
 
     fn submodule_name_for_status_path(repo: &Repository, path: &str) -> Option<String> {
         let target = Path::new(path);
-        repo.submodules().ok()?.into_iter().find(|submodule| submodule.path() == target).map(|submodule| submodule.name().map(str::to_string).unwrap_or_else(|| path.to_string()))
+        list_submodules(repo).ok()?.into_iter().find(|submodule| submodule.path == target).map(|submodule| submodule.name)
     }
 
     pub(crate) fn start_network_request(&mut self, request: NetworkRequest) {
@@ -378,7 +382,7 @@ impl App {
                 let Some(alias) = self.stash_alias_at_pane_selection() else {
                     return;
                 };
-                *self.oids.get_oid_by_alias(alias)
+                self.oids.get_git2_oid_by_alias(alias)
             },
             _ => return,
         };
@@ -418,7 +422,7 @@ impl App {
                 let Some(alias) = self.stash_alias_at_pane_selection() else {
                     return;
                 };
-                *self.oids.get_oid_by_alias(alias)
+                self.oids.get_git2_oid_by_alias(alias)
             },
             _ => return,
         };
@@ -790,17 +794,14 @@ impl App {
     }
 
     fn default_remote_for_network(&mut self, operation: &str) -> Option<String> {
-        let Some(repo) = self.repo.clone() else {
-            return None;
-        };
+        self.repo.as_ref()?;
 
-        match effective_default_remote(&repo) {
-            Some(remote_name) => Some(remote_name),
-            None => {
-                self.show_error(errors::no_remotes_configured(operation));
-                None
-            },
+        let repo_path = self.path.as_deref().unwrap_or(".");
+        let remote_name = effective_default_remote_from_remotes(repo_path, &self.remotes).or_else(|| effective_default_remote(repo_path));
+        if remote_name.is_none() {
+            self.show_error(errors::no_remotes_configured(operation));
         }
+        remote_name
     }
 
     pub fn on_create_branch(&mut self) {
@@ -948,10 +949,7 @@ impl App {
                 };
 
                 // Deleting the currently checked-out branch would leave HEAD invalid.
-                let proceed = match get_current_branch(repo) {
-                    Some(current) => current != branch,
-                    None => true,
-                };
+                let proceed = get_current_branch(repo).is_none_or(|current| current != branch);
 
                 if proceed {
                     self.delete_branch_from_ui(&branch);
@@ -1021,23 +1019,21 @@ impl App {
                             Err(error) => self.show_error(errors::with_error(errors::DELETE_TAG(), error)),
                         }
                     },
-                    Focus::Viewport => {
-                        if self.graph_selected != 0 {
-                            let tag_names: Vec<String> = self
-                                .graph_row_at(if self.graph_selected == 0 { 1 } else { self.graph_selected })
-                                .map(|row| row.tags.iter().map(|tag| tag.name.clone()).collect())
-                                .or_else(|| self.graph_alias_at(if self.graph_selected == 0 { 1 } else { self.graph_selected }).map(|alias| self.tags.local.get(&alias).cloned().unwrap_or_default()))
-                                .unwrap_or_default();
-                            match tag_names.len() {
-                                0 => {},
-                                1 => match untag(repo, tag_names[0].as_str()) {
-                                    Ok(_) => self.reload(None),
-                                    Err(error) => self.show_error(errors::with_error(errors::DELETE_TAG(), error)),
-                                },
-                                _ => {
-                                    self.focus = Focus::ModalDeleteTag;
-                                },
-                            }
+                    Focus::Viewport if self.graph_selected != 0 => {
+                        let tag_names: Vec<String> = self
+                            .graph_row_at(self.graph_selected)
+                            .map(|row| row.tags.iter().map(|tag| tag.name.clone()).collect())
+                            .or_else(|| self.graph_alias_at(self.graph_selected).map(|alias| self.tags.local.get(&alias).cloned().unwrap_or_default()))
+                            .unwrap_or_default();
+                        match tag_names.len() {
+                            0 => {},
+                            1 => match untag(repo, tag_names[0].as_str()) {
+                                Ok(_) => self.reload(None),
+                                Err(error) => self.show_error(errors::with_error(errors::DELETE_TAG(), error)),
+                            },
+                            _ => {
+                                self.focus = Focus::ModalDeleteTag;
+                            },
                         }
                     },
                     _ => {},
