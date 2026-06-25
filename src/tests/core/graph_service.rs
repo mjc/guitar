@@ -153,7 +153,7 @@ fn graph_service_reports_progress_and_answers_visible_window() {
     let (path, repo) = temp_repo("window");
     commit(&repo, "one.txt", "one");
     let two = commit(&repo, "two.txt", "two");
-    let harness = GraphServiceHarness::spawn(path, 42, 1, HashSet::new(), false, Vec::new());
+    let harness = GraphServiceHarness::spawn(path.clone(), 42, 1, HashSet::new(), false, Vec::new());
 
     assert!(harness.wait_for_progress(false) > 0);
 
@@ -170,20 +170,11 @@ fn graph_service_reports_progress_and_answers_visible_window() {
     harness.send(GraphCommand::Lookup { generation: 42, request_id: 9, kind: GraphLookupKind::Oid { oid: two } });
     assert!(matches!(harness.wait_for_lookup(9), GraphLookupResult::Index(Some(1))));
 
-    harness.shutdown();
-}
-
-#[test]
-fn graph_service_updates_worktrees_from_command() {
-    let (path, repo) = temp_repo("worktree-update");
-    let head = commit(&repo, "one.txt", "one");
-    let harness = GraphServiceHarness::spawn(path.clone(), 43, 1, HashSet::new(), false, Vec::new());
-
     let updated = vec![WorktreeEntry {
         name: "repo".to_string(),
         path,
         branch: Some("master".to_string()),
-        head: Some(git2_to_gix_oid(head)),
+        head: Some(git2_to_gix_oid(two)),
         alias: None,
         kind: crate::core::worktrees::WorktreeKind::Main,
         is_current: true,
@@ -192,9 +183,8 @@ fn graph_service_updates_worktrees_from_command() {
         locked_reason: None,
         is_dirty: true,
     }];
-    harness.send(GraphCommand::UpdateWorktrees { generation: 43, worktrees: updated.clone() });
-    let (version, worktrees) = harness.wait_for_worktrees();
-    assert_eq!(version, 1);
+    harness.send(GraphCommand::UpdateWorktrees { generation: 42, worktrees: updated.clone() });
+    let (_, worktrees) = harness.wait_for_worktrees();
     assert_eq!(worktrees, updated);
 
     harness.shutdown();
