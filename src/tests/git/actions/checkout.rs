@@ -61,15 +61,6 @@ fn checkout_branch_bootstraps_a_local_branch_from_a_remote_tracking_ref() {
     assert_eq!(release.upstream().unwrap().get().name(), Some("refs/remotes/origin/release"));
     assert_eq!(local.get(&7), Some(&expected_local));
     assert!(!hidden_branch_names.contains("release"));
-}
-
-#[test]
-fn checkout_branch_errors_for_missing_branch() {
-    let dir = TestDir::new("checkout-linked-missing-branch");
-    let fixture = linked_worktree_fixture(&dir, "feature");
-
-    let mut hidden_branch_names = HashSet::new();
-    let mut local = HashMap::new();
 
     assert!(checkout_branch(&fixture.linked_repo, &mut hidden_branch_names, &mut local, 7, "origin/missing").is_err());
 }
