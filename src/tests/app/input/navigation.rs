@@ -369,7 +369,6 @@ fn branch_toggle_uses_git_branch_universe_when_pane_window_is_partial() {
     {
         let commit = repo.find_commit(oid).unwrap();
         repo.branch("feature", &commit, false).unwrap();
-        repo.branch("main", &commit, false).unwrap();
     }
 
     let mut app = App {
@@ -818,6 +817,7 @@ fn zen_graph_narrow_promotes_cached_window_row_before_opening_inspector() {
             index: 42,
             alias: 99,
             oid,
+            short_oid: oid.to_string()[..8].to_string(),
             summary: "cached".to_string(),
             committer_date: String::new(),
             committer_name: String::new(),
@@ -828,6 +828,7 @@ fn zen_graph_narrow_promotes_cached_window_row_before_opening_inspector() {
             is_stash: false,
             stash_lane: None,
             worktrees: Vec::new(),
+            has_current_worktree: false,
             reflog: None,
         }],
         history: Default::default(),
@@ -864,6 +865,7 @@ fn graph_row_lookup_result_opens_inspector_with_reflog() {
                 index: 42,
                 alias: 99,
                 oid,
+                short_oid: oid.to_string()[..8].to_string(),
                 summary: "commit".to_string(),
                 committer_date: String::new(),
                 committer_name: String::new(),
@@ -874,6 +876,7 @@ fn graph_row_lookup_result_opens_inspector_with_reflog() {
                 is_stash: false,
                 stash_lane: None,
                 worktrees: Vec::new(),
+                has_current_worktree: false,
                 reflog: Some(GraphReflogLabel { selector: "HEAD@{0}".to_string(), message: "commit: commit".to_string(), lane: Some(LaneRef::new(2, false)) }),
             })),
         })
