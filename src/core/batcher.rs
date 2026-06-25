@@ -288,13 +288,6 @@ impl Batcher {
         Ok(())
     }
 
-    // Pull the next page, dropping commits the object database cannot resolve.
-    pub fn next(&mut self, count: usize) -> Vec<WalkedCommit> {
-        let mut page = Vec::with_capacity(count);
-        self.next_into(count, &mut page);
-        page
-    }
-
     // Pull the next page into an existing output buffer to avoid a temporary page allocation.
     pub fn next_into(&mut self, count: usize, out: &mut Vec<WalkedCommit>) -> usize {
         self.take_into(count, out, CommitCursor::next_commit)
@@ -394,7 +387,9 @@ mod tests {
     {
         let gix_repo = gix::open(dir.join("repo")).unwrap();
         let mut batcher = Batcher::new(&gix_repo, &hidden_branch_names, extra_roots).unwrap();
-        batcher.next(10).into_iter().map(|commit| commit.oid).collect()
+        let mut commits = Vec::new();
+        batcher.next_into(10, &mut commits);
+        commits.into_iter().map(|commit| commit.oid).collect()
     }
 
     #[test]

@@ -33,6 +33,9 @@ pub type Generation = u64;
 pub type GraphVersion = u64;
 pub type LaneSnapshot = SmallVec<[Chunk; 32]>;
 pub type GraphSnapshot = LaneSnapshot;
+pub type GraphBranchLabels = SmallVec<[GraphBranchLabel; 2]>;
+pub type GraphTagLabels = SmallVec<[GraphTagLabel; 2]>;
+pub type GraphWorktrees = SmallVec<[WorktreeEntry; 1]>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GraphHistory {
@@ -133,17 +136,16 @@ pub struct GraphRow {
     pub index: usize,
     pub alias: u32,
     pub oid: Oid,
-    pub short_oid: String,
     pub summary: String,
     pub committer_date: String,
     pub committer_name: String,
     pub is_merge: bool,
     pub has_any_branch: bool,
-    pub branches: Vec<GraphBranchLabel>,
-    pub tags: Vec<GraphTagLabel>,
+    pub branches: GraphBranchLabels,
+    pub tags: GraphTagLabels,
     pub is_stash: bool,
     pub stash_lane: Option<LaneRef>,
-    pub worktrees: Vec<WorktreeEntry>,
+    pub worktrees: GraphWorktrees,
     pub has_current_worktree: bool,
     pub reflog: Option<GraphReflogLabel>,
 }
@@ -185,7 +187,6 @@ pub enum GraphPaneRow {
 pub struct GraphFileHistoryRow {
     pub graph_index: usize,
     pub oid: Oid,
-    pub short_oid: String,
     pub summary: String,
     pub status: FileStatus,
 }
@@ -459,23 +460,10 @@ fn file_history_rows(walk_ctx: &Walker, path: &str, symbols: &SymbolTheme) -> Re
 
         let summary = commit_summary_from_repo(&walk_ctx.gix_repo, oid, symbols);
         let git2_oid = gix_to_git2_oid(oid);
-        let short_oid = short_oid(git2_oid);
-        rows.push(GraphFileHistoryRow { graph_index, oid: git2_oid, short_oid, summary, status });
+        rows.push(GraphFileHistoryRow { graph_index, oid: git2_oid, summary, status });
     }
 
     Ok(rows)
-}
-
-fn short_oid(oid: Oid) -> String {
-    let mut oid = oid.to_string();
-    oid.truncate(8);
-    oid
-}
-
-fn graph_short_oid(oid: Oid) -> String {
-    let mut oid = oid.to_string();
-    oid.truncate(9);
-    oid
 }
 
 fn no_message(symbols: &SymbolTheme) -> String {
@@ -547,7 +535,6 @@ fn graph_rows(
             index,
             alias,
             oid: git2_oid,
-            short_oid: graph_short_oid(git2_oid),
             summary: metadata.summary,
             committer_date: metadata.committer_date,
             committer_name: metadata.committer_name,
@@ -776,7 +763,7 @@ fn alias_reflog_entry(entry: &HeadReflogEntry, new_alias: u32) -> HeadReflogAlia
     }
 }
 
-fn worktrees_for_alias(worktrees: &Worktrees, walk_ctx: &Walker, alias: u32) -> Vec<WorktreeEntry> {
+fn worktrees_for_alias(worktrees: &Worktrees, walk_ctx: &Walker, alias: u32) -> GraphWorktrees {
     worktrees
         .entries
         .iter()
