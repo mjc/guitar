@@ -17,6 +17,8 @@ fn tag_creates_lightweight_reference_and_untag_removes_it() {
 
     untag(&repo, "v1.0.0").unwrap();
     assert!(repo.find_reference("refs/tags/v1.0.0").is_err());
+
+    assert!(untag(&repo, "v1.0.0").is_err());
 }
 
 #[test]
@@ -27,13 +29,4 @@ fn tag_rejects_existing_lightweight_reference() {
 
     assert!(tag(&repo, oid, "v1.0.0").is_err());
     assert_eq!(repo.find_reference("refs/tags/v1.0.0").unwrap().target(), Some(oid));
-}
-
-#[test]
-fn untag_rejects_missing_lightweight_reference() {
-    let _dir = TestDir::new("untag-missing");
-    let repo = init_repo_at(&_dir.join("repo"));
-
-    assert!(untag(&repo, "v1.0.0").is_err());
-    assert!(repo.find_reference("refs/tags/v1.0.0").is_err());
 }
