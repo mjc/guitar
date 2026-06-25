@@ -8,7 +8,7 @@ use git2::Repository;
 use std::fs;
 
 #[test]
-fn fetch_populates_remote_tracking_refs_tags_and_linked_worktrees() {
+fn fetch_reports_failures_and_populates_refs_tags_and_linked_worktrees() {
     let dir = TestDir::new("fetch");
     let (source, remote_path) = source_with_origin(&dir);
     let commit = commit_file(&source, "file.txt", "source\n", "source");
@@ -17,6 +17,9 @@ fn fetch_populates_remote_tracking_refs_tags_and_linked_worktrees() {
     seed_remote(&source, "origin", &["refs/heads/feature:refs/heads/feature", "refs/tags/v1.0.0:refs/tags/v1.0.0"]);
 
     let consumer = init_repo_at(&dir.join("consumer"));
+    let handle = fetch_remote(consumer.workdir().unwrap().to_str().unwrap(), "origin", AuthSession::default());
+    assert!(matches!(handle.join().unwrap(), NetworkResult::Failure(_)));
+
     add_remote_path(&consumer, "origin", &remote_path);
 
     let handle = fetch_remote(consumer.workdir().unwrap().to_str().unwrap(), "origin", AuthSession::default());
@@ -36,25 +39,8 @@ fn fetch_populates_remote_tracking_refs_tags_and_linked_worktrees() {
 
     let linked_repo = Repository::open(&linked_path).unwrap();
     assert_eq!(linked_repo.find_reference("refs/remotes/origin/feature").unwrap().target(), Some(commit));
-}
 
-#[test]
-fn fetch_reports_missing_or_unreachable_remotes() {
-    let dir = TestDir::new("fetch-failures");
-    let consumer = init_repo_at(&dir.join("consumer"));
-
-    let handle = fetch_remote(consumer.workdir().unwrap().to_str().unwrap(), "origin", AuthSession::default());
-    assert!(matches!(handle.join().unwrap(), NetworkResult::Failure(_)));
-
-    let (source, remote_path) = source_with_origin(&dir);
-    let commit = commit_file(&source, "file.txt", "source\n", "source");
-    create_branch(&source, "feature", commit);
-    seed_remote(&source, "origin", &["refs/heads/feature:refs/heads/feature"]);
-
-    let configured = init_repo_at(&dir.join("configured"));
-    add_remote_path(&configured, "origin", &remote_path);
     fs::remove_dir_all(&remote_path).unwrap();
-
-    let handle = fetch_remote(configured.workdir().unwrap().to_str().unwrap(), "origin", AuthSession::default());
+    let handle = fetch_remote(consumer.workdir().unwrap().to_str().unwrap(), "origin", AuthSession::default());
     assert!(matches!(handle.join().unwrap(), NetworkResult::Failure(_)));
 }
