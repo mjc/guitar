@@ -8,7 +8,7 @@ use git2::Repository;
 use std::fs;
 
 #[test]
-fn fetch_populates_remote_tracking_refs_and_tags() {
+fn fetch_populates_remote_tracking_refs_tags_and_linked_worktrees() {
     let dir = TestDir::new("fetch");
     let (source, remote_path) = source_with_origin(&dir);
     let commit = commit_file(&source, "file.txt", "source\n", "source");
@@ -24,6 +24,18 @@ fn fetch_populates_remote_tracking_refs_and_tags() {
 
     assert_eq!(consumer.find_reference("refs/remotes/origin/feature").unwrap().target(), Some(commit));
     assert!(consumer.find_reference("refs/tags/v1.0.0").is_ok());
+
+    let worktree_owner = init_repo_at(&dir.join("worktree-owner"));
+    let owner_commit = commit_file(&worktree_owner, "consumer.txt", "consumer\n", "consumer");
+    add_remote_path(&worktree_owner, "origin", &remote_path);
+    let linked_path = dir.join("linked");
+    create_worktree(&worktree_owner, "linked", &linked_path, owner_commit).unwrap();
+
+    let handle = fetch_remote(linked_path.to_str().unwrap(), "origin", AuthSession::default());
+    assert!(matches!(handle.join().unwrap(), NetworkResult::Success));
+
+    let linked_repo = Repository::open(&linked_path).unwrap();
+    assert_eq!(linked_repo.find_reference("refs/remotes/origin/feature").unwrap().target(), Some(commit));
 }
 
 #[test]
@@ -45,25 +57,4 @@ fn fetch_reports_missing_or_unreachable_remotes() {
 
     let handle = fetch_remote(configured.workdir().unwrap().to_str().unwrap(), "origin", AuthSession::default());
     assert!(matches!(handle.join().unwrap(), NetworkResult::Failure(_)));
-}
-
-#[test]
-fn fetch_supports_linked_worktree_paths() {
-    let dir = TestDir::new("fetch-linked-worktree");
-    let (source, remote_path) = source_with_origin(&dir);
-    let commit = commit_file(&source, "file.txt", "source\n", "source");
-    create_branch(&source, "feature", commit);
-    seed_remote(&source, "origin", &["refs/heads/feature:refs/heads/feature"]);
-
-    let consumer = init_repo_at(&dir.join("consumer"));
-    let consumer_commit = commit_file(&consumer, "consumer.txt", "consumer\n", "consumer");
-    add_remote_path(&consumer, "origin", &remote_path);
-    let linked_path = dir.join("linked");
-    create_worktree(&consumer, "linked", &linked_path, consumer_commit).unwrap();
-
-    let handle = fetch_remote(linked_path.to_str().unwrap(), "origin", AuthSession::default());
-    assert!(matches!(handle.join().unwrap(), NetworkResult::Success));
-
-    let linked_repo = Repository::open(&linked_path).unwrap();
-    assert_eq!(linked_repo.find_reference("refs/remotes/origin/feature").unwrap().target(), Some(commit));
 }
