@@ -121,28 +121,37 @@ impl DeltaLog {
     }
 
     fn push(&mut self, delta: Delta) {
+        let span = self.store_ops(&delta.ops);
+        self.delta_chunk().push(span);
+        self.len += 1;
+    }
+
+    fn delta_chunk(&mut self) -> &mut Vec<DeltaSpan> {
         if self.chunks.last().is_none_or(|chunk| chunk.len() == DELTA_CHUNK_SIZE) {
             self.chunks.push(Vec::with_capacity(DELTA_CHUNK_SIZE));
         }
+        self.chunks.last_mut().expect("delta log has a writable chunk")
+    }
 
-        let op_len = delta.ops.len();
-        if op_len > 0 && self.op_chunks.last().is_none_or(|chunk| chunk.len() + op_len > DELTA_OP_CHUNK_SIZE) {
-            self.op_chunks.push(Vec::with_capacity(DELTA_OP_CHUNK_SIZE.max(op_len)));
+    fn store_ops(&mut self, ops: &DeltaOps) -> DeltaSpan {
+        let len = ops.len();
+        if len == 0 {
+            return DeltaSpan::default();
         }
 
-        let chunk_idx = self.op_chunks.len().saturating_sub(1);
-        let start = self.op_chunks.last().map_or(0, Vec::len);
-        for op in delta.ops.iter() {
-            self.op_chunks.last_mut().expect("delta op log has a writable chunk").push(*op);
+        if self.op_chunks.last().is_none_or(|chunk| chunk.len() + len > DELTA_OP_CHUNK_SIZE) {
+            self.op_chunks.push(Vec::with_capacity(DELTA_OP_CHUNK_SIZE.max(len)));
         }
-        let len = u16::try_from(op_len).expect("delta entry exceeded u16::MAX ops");
 
-        self.chunks.last_mut().expect("delta log has a writable chunk").push(DeltaSpan {
-            chunk: u16::try_from(chunk_idx).expect("delta op chunk index exceeded u16::MAX"),
+        let chunk = self.op_chunks.last_mut().expect("delta op log has a writable chunk");
+        let start = chunk.len();
+        chunk.extend(ops.iter().copied());
+
+        DeltaSpan {
+            chunk: u16::try_from(self.op_chunks.len() - 1).expect("delta op chunk index exceeded u16::MAX"),
             start: u32::try_from(start).expect("delta op arena chunk exceeded u32::MAX entries"),
-            len,
-        });
-        self.len += 1;
+            len: u16::try_from(len).expect("delta entry exceeded u16::MAX ops"),
+        }
     }
 
     fn iter_range(&self, start: usize, end: usize) -> DeltaLogRangeIter<'_> {
@@ -263,75 +272,12 @@ impl Buffer {
 
     pub fn update(&mut self, chunk: Chunk) -> UpdateOutcome {
         self.backup();
+        self.expire_transient_lanes();
+        self.trim_trailing_dummies();
+        self.split_planned_merger();
 
-        for lane_idx in self.transient_lanes.drain(..) {
-            if lane_idx < self.curr.len() && !self.curr[lane_idx].is_dummy() {
-                self.curr[lane_idx] = Chunk::dummy();
-                self.delta.ops.push(DeltaOp::Replace { index: delta_index(lane_idx), new: self.curr[lane_idx] });
-            }
-        }
-
-        // Trailing dummy lanes carry no future topology and can be removed immediately.
-        while let Some(last_idx) = self.curr.len().checked_sub(1) {
-            if !self.curr[last_idx].is_dummy() {
-                break;
-            }
-            self.curr.pop();
-            self.delta.ops.push(DeltaOp::Remove { index: delta_index(last_idx) });
-        }
-
-        // Planned mergers split a lane so the second parent can draw toward its target later.
-        if !self.mergers.is_empty()
-            && let Some(merger_idx) = self.curr.iter().position(|inner| self.mergers.contains(&inner.alias))
-        {
-            let merger_alias = self.curr[merger_idx].alias;
-            self.mergers.retain(|alias| *alias != merger_alias);
-
-            let mut clone = self.curr[merger_idx];
-            clone.parent_a = clone.parent_b;
-            clone.parent_b = NONE;
-            self.curr[merger_idx].parent_b = NONE;
-            self.curr.push(clone);
-
-            self.delta.ops.push(DeltaOp::Replace { index: delta_index(merger_idx), new: self.curr[merger_idx] });
-
-            self.delta.ops.push(DeltaOp::Insert { index: delta_index(self.curr.len() - 1), item: clone });
-        }
-
-        // Prefer replacing the parent lane; append only when the commit starts a new lane.
         if let Some(first_idx) = self.curr.iter().position(|inner| inner.parent_a == chunk.alias) {
-            let old_alias = chunk.alias;
-
-            self.curr[first_idx] = chunk;
-            self.delta.ops.push(DeltaOp::Replace { index: delta_index(first_idx), new: chunk });
-
-            // Clear consumed parent pointers so inactive branch lanes collapse into dummies.
-            for (i, inner) in self.curr.iter_mut().enumerate() {
-                if inner.alias == old_alias {
-                    continue;
-                }
-
-                let mut parents_changed = false;
-
-                if inner.parent_a == old_alias {
-                    inner.parent_a = NONE;
-                    parents_changed = true;
-                }
-
-                if inner.parent_b == old_alias {
-                    inner.parent_b = NONE;
-                    parents_changed = true;
-                }
-
-                if parents_changed {
-                    if inner.parent_a == NONE && inner.parent_b == NONE {
-                        *inner = Chunk::dummy();
-                    }
-
-                    self.delta.ops.push(DeltaOp::Replace { index: delta_index(i), new: *inner });
-                }
-            }
-
+            self.replace_parent_lane(first_idx, chunk);
             self.enforce_lane_limit(Some(first_idx));
             UpdateOutcome { lane: self.lane_ref_for_original_index(first_idx), started_lane: false }
         } else {
@@ -341,6 +287,66 @@ impl Buffer {
             self.enforce_lane_limit(Some(lane_idx));
             UpdateOutcome { lane: self.lane_ref_for_original_index(lane_idx), started_lane: true }
         }
+    }
+
+    fn expire_transient_lanes(&mut self) {
+        let mut lanes = std::mem::take(&mut self.transient_lanes);
+        for lane_idx in lanes.drain(..) {
+            if self.curr.get(lane_idx).is_some_and(|chunk| !chunk.is_dummy()) {
+                self.curr[lane_idx] = Chunk::dummy();
+                self.delta.ops.push(DeltaOp::Replace { index: delta_index(lane_idx), new: self.curr[lane_idx] });
+            }
+        }
+        self.transient_lanes = lanes;
+    }
+
+    fn trim_trailing_dummies(&mut self) {
+        let old_len = self.curr.len();
+        let new_len = self.curr.iter().rposition(|chunk| !chunk.is_dummy()).map_or(0, |idx| idx + 1);
+
+        self.curr.truncate(new_len);
+        (new_len..old_len).rev().for_each(|idx| self.delta.ops.push(DeltaOp::Remove { index: delta_index(idx) }));
+    }
+
+    fn split_planned_merger(&mut self) {
+        let Some(merger_idx) = self.curr.iter().position(|inner| self.mergers.contains(&inner.alias)) else {
+            return;
+        };
+
+        let merger_alias = self.curr[merger_idx].alias;
+        self.mergers.retain(|alias| *alias != merger_alias);
+
+        let mut split = self.curr[merger_idx];
+        split.parent_a = split.parent_b;
+        split.parent_b = NONE;
+        self.curr[merger_idx].parent_b = NONE;
+        self.curr.push(split);
+
+        self.delta.ops.push(DeltaOp::Replace { index: delta_index(merger_idx), new: self.curr[merger_idx] });
+        self.delta.ops.push(DeltaOp::Insert { index: delta_index(self.curr.len() - 1), item: split });
+    }
+
+    fn replace_parent_lane(&mut self, lane_idx: usize, chunk: Chunk) {
+        let old_alias = chunk.alias;
+
+        self.curr[lane_idx] = chunk;
+        self.delta.ops.push(DeltaOp::Replace { index: delta_index(lane_idx), new: chunk });
+        self.clear_consumed_parent_lanes(old_alias);
+    }
+
+    fn clear_consumed_parent_lanes(&mut self, old_alias: u32) {
+        self.curr.iter_mut().enumerate().filter(|(_, inner)| inner.alias != old_alias && (inner.parent_a == old_alias || inner.parent_b == old_alias)).for_each(|(idx, inner)| {
+            if inner.parent_a == old_alias {
+                inner.parent_a = NONE;
+            }
+            if inner.parent_b == old_alias {
+                inner.parent_b = NONE;
+            }
+            if inner.parent_a == NONE && inner.parent_b == NONE {
+                *inner = Chunk::dummy();
+            }
+            self.delta.ops.push(DeltaOp::Replace { index: delta_index(idx), new: *inner });
+        });
     }
 
     fn enforce_lane_limit(&mut self, preferred_idx: Option<usize>) {
@@ -363,9 +369,7 @@ impl Buffer {
             self.delta.ops.push(DeltaOp::Truncate { len: delta_index(limit) });
         }
 
-        while self.curr.len() > limit {
-            self.curr.pop();
-        }
+        self.curr.truncate(limit);
 
         self.purge_unstored_mergers();
         self.transient_lanes.retain(|lane_idx| *lane_idx < limit && (*lane_idx + 1 != limit || !self.curr.get(*lane_idx).is_some_and(|chunk| chunk.is_flattened)));
@@ -444,15 +448,11 @@ impl Buffer {
                         curr[*index as usize] = *new;
                     },
                     DeltaOp::Truncate { len } => {
-                        while curr.len() > *len as usize {
-                            curr.pop();
-                        }
+                        curr.truncate(*len as usize);
                     },
                     DeltaOp::ReplaceAndTruncate { index, new, len } => {
                         curr[*index as usize] = *new;
-                        while curr.len() > *len as usize {
-                            curr.pop();
-                        }
+                        curr.truncate(*len as usize);
                     },
                 }
             }
