@@ -159,7 +159,7 @@ fn first_graph_progress_with_dirty_submodule_status_stays_in_graph_view() {
 }
 
 #[test]
-fn uncommitted_metadata_waits_for_complete_graph_progress_without_full_worktree_scan() {
+fn uncommitted_metadata_waits_for_complete_progress_then_selection_loads_details() {
     let (dir, repo) = temp_repo("deferred-uncommitted");
     commit_file(&repo, "tracked.txt", "tracked", "tracked");
     write_workdir_file(&repo, "staged.txt", "staged\n");
@@ -186,23 +186,6 @@ fn uncommitted_metadata_waits_for_complete_graph_progress_without_full_worktree_
     assert!(!app.is_uncommitted_detail_loaded);
     assert_eq!(app.uncommitted.staged.added, vec!["staged.txt".to_string()]);
     assert!(app.uncommitted.unstaged.added.is_empty());
-}
-
-#[test]
-fn selecting_uncommitted_row_loads_full_worktree_details() {
-    let (dir, repo) = temp_repo("deferred-uncommitted-details");
-    commit_file(&repo, "tracked.txt", "tracked", "tracked");
-    write_workdir_file(&repo, "new.txt", "new\n");
-    let repo = Rc::new(repo);
-    let (cmd_tx, _cmd_rx) = std::sync::mpsc::channel();
-    let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let mut app = app_with_repo(repo.clone());
-    app.path = Some(dir.path().display().to_string());
-    app.graph_tx = Some(cmd_tx);
-    app.graph_event_tx = Some(event_tx);
-    app.graph_rx = Some(event_rx);
-    app.graph.generation = 12;
-    app.is_uncommitted_loaded = true;
     app.graph.total = 2;
 
     app.select_graph_index(0);
