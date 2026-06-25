@@ -6,6 +6,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use gix::bstr::ByteSlice;
+
+const LOCAL_BRANCH_PREFIX: &str = "refs/heads/";
+const REMOTE_BRANCH_PREFIX: &str = "refs/remotes/";
+
 #[derive(Facet, Clone, Default)]
 pub struct RepositoryBranchVisibility {
     pub path: String,
@@ -41,15 +46,19 @@ pub fn current_branch_names(repo: &Repository) -> HashSet<String> {
             continue;
         };
 
-        let branch_name = name.strip_prefix("refs/heads/").or_else(|| name.strip_prefix("refs/remotes/"));
-        if let Some(branch_name) = branch_name
-            && !branch_name.is_empty()
-        {
+        if let Some(branch_name) = branch_name_from_ref(name.as_bytes()) {
             names.insert(branch_name.to_string());
         }
     }
 
     names
+}
+
+pub(crate) fn branch_name_from_ref(name: &[u8]) -> Option<&str> {
+    name.strip_prefix(LOCAL_BRANCH_PREFIX.as_bytes())
+        .or_else(|| name.strip_prefix(REMOTE_BRANCH_PREFIX.as_bytes()))
+        .filter(|branch_name| !branch_name.is_empty())
+        .and_then(|branch_name| branch_name.to_str().ok())
 }
 
 pub fn prune_hidden_branches(hidden: &mut HashSet<String>, current: &HashSet<String>) -> bool {

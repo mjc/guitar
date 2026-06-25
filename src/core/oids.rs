@@ -1,7 +1,7 @@
 use crate::core::chunk::NONE;
 use git2::Oid;
 use gix::ObjectId;
-use iddqd::{id_upcast, IdHashItem, IdHashMap};
+use iddqd::{IdHashItem, IdHashMap, id_upcast};
 
 pub trait IntoGixOid {
     fn into_gix_oid(self) -> ObjectId;
