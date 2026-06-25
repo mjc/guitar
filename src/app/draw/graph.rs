@@ -39,10 +39,8 @@ impl App {
             if self.graph_selected != 0
                 && let Some(identity) = self.graph_identity_at(self.graph_selected)
                 && let Some(repo) = repo
-                && let Some(oid) = self.graph_oid_for_identity(identity)
             {
-                self.current_diff = crate::git::queries::diffs::get_filenames_diff_at_oid(repo, oid);
-                self.current_diff_identity = Some(identity);
+                self.refresh_current_diff_for_identity(repo, identity);
             }
         }
 

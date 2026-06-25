@@ -16,7 +16,7 @@ Batcher revwalk pages
 Walker: assign aliases, read parents, update lanes
         |
         v
-Buffer: store lane snapshots as deltas
+Buffer: store lane snapshots as deltas, with optional lane-cap flattening
         |
         v
 GraphService: project rows + visible history window
@@ -30,8 +30,8 @@ App::draw_graph: align cached projections into the visible table
 
 The graph is topology-first. The renderer does not ask Git where to draw a
 line. Instead, the walker records enough lane state for each commit row, and
-the renderer derives visible pipes, merge curves, branch curves, and commit
-markers from the current and previous lane snapshots.
+the renderer derives visible pipes, merge curves, branch curves, flattened-lane
+bridges, and commit markers from the current and previous lane snapshots.
 
 ## Vocabulary
 
@@ -74,8 +74,8 @@ The graph pipeline is split across a few focused modules:
 | --- | --- |
 | `src/core/batcher.rs` | Owns the libgit2 revwalk and returns pages of OIDs. |
 | `src/core/oids.rs` | Maps Git OIDs to compact `u32` aliases and stores rendered order. |
-| `src/core/chunk.rs` | Defines the lane entry stored in the graph buffer. |
-| `src/core/buffer.rs` | Maintains current lanes and records deltas/checkpoints. |
+| `src/core/chunk.rs` | Defines the lane entry stored in the graph buffer, including flattened cap lanes. |
+| `src/core/buffer.rs` | Maintains current lanes, enforces the lane limit, and records deltas/checkpoints. |
 | `src/core/walker.rs` | Reads commits, parents, refs, stashes, reflogs, and updates the buffer. |
 | `src/core/graph_service.rs` | Runs the walker in a worker thread and projects visible windows. |
 | `src/core/renderers.rs` | Renders graph, SHA, date, committer, and message projections. |
@@ -175,10 +175,15 @@ Each lane says:
 - which commit currently occupies the lane (`alias`),
 - which parent alias the lane wants to meet next (`parent_a`),
 - optionally a second parent for one merge edge (`parent_b`),
-- whether the lane is a commit, dummy, or uncommitted marker.
+- whether the lane is a commit, dummy, or uncommitted marker,
+- whether the lane is a flattened representative for lanes hidden behind the
+  configured lane cap.
 
-The buffer prefers to replace a lane whose `parent_a` equals the incoming
-commit alias. If none exists, the incoming commit starts a new rightmost lane.
+The buffer prefers to replace a lane whose `parent_a` or `parent_b` equals the
+incoming commit alias. If none exists, the incoming commit starts a new
+rightmost lane. If the active lane count then exceeds the configured graph lane
+limit, the cap lane becomes a flattened representative and lanes to its right
+are truncated from the stored snapshot.
 
 ```text
 Before update with alias B:
@@ -215,6 +220,8 @@ full copy. It stores deltas plus occasional checkpoints:
 DeltaOp::Insert  { index, item }
 DeltaOp::Remove  { index }
 DeltaOp::Replace { index, new }
+DeltaOp::Truncate { len }
+DeltaOp::ReplaceAndTruncate { index, new, len }
 ```
 
 `Buffer::window(start, end)` reconstructs only the snapshots needed for a
@@ -332,6 +339,7 @@ Chunk
 | parent_a | the main parent this lane should meet    |
 | parent_b | optional second parent for merge drawing |
 | marker   | Uncommitted | Commit | Dummy             |
+| is_flattened | true when this lane represents the lane cap |
 +----------+------------------------------------------+
 ```
 
@@ -352,6 +360,9 @@ dummy lane:
 
 uncommitted row:
   Chunk { alias: NONE, parent_a: HEAD, parent_b: NONE, marker: Uncommitted }
+
+flattened cap lane:
+  Chunk { alias: C, parent_a: P1, parent_b: P2, marker: Commit, is_flattened: true }
 ```
 
 ### Buffer.curr
@@ -373,6 +384,37 @@ lane 0: row commit A      -> draw commit marker
 lane 1: active X -> Y     -> draw "|"
 lane 2: active M -> P,Q   -> draw "|", unless merge rendering overlays it
 ```
+
+### Flattened cap lanes
+
+When `Buffer.curr.len()` grows past `graph_lane_limit`, the last visible lane is
+kept as a representative and every lane to its right is omitted from the stored
+snapshot:
+
+```text
+limit = 3
+
+before:
+lane 0: A -> B
+lane 1: C -> D
+lane 2: E -> F
+lane 3: X -> Y
+
+after:
+lane 0: A -> B
+lane 1: C -> D
+lane 2: X -> Y  (flattened)
+```
+
+The representative is chosen from the incoming overflow lane when possible; if
+not, the first non-dummy lane at or beyond the cap is used. Flattening is stored
+on the `Chunk` itself via `is_flattened`; there is no separate
+`compressed_parents` side list. Deltas record the change with either
+`ReplaceAndTruncate` or `Truncate`.
+
+The renderer treats flattened lanes as visible cap lanes. It uses dotted pipe
+symbols for those lanes and maps merge closeouts that would draw beyond the cap
+back to the flattened lane.
 
 ### Deltas and checkpoints
 
@@ -399,11 +441,13 @@ checkpoint[0] = []
 delta[1] = Insert lane 0: uncommitted
 delta[2] = Replace lane 0: A -> B
 delta[3] = Replace lane 0: B -> C
+delta[4] = ReplaceAndTruncate lane 2 with flattened cap, len 3
 
 window(0, 4) replays:
   [] + delta[1] => snapshot row 0
      + delta[2] => snapshot row 1
      + delta[3] => snapshot row 2
+     + delta[4] => snapshot row 3
 ```
 
 Checkpoints are stored every 100 deltas so reconstructing a far-down window
@@ -579,8 +623,8 @@ creates a lane for the second parent so later rows can draw the merge edge.
 
 ### Rule: replace matching parent lane
 
-If an incoming commit alias matches an existing lane's `parent_a`, that lane is
-replaced by the incoming commit:
+If an incoming commit alias matches an existing lane's `parent_a` or
+`parent_b`, that lane is replaced by the incoming commit:
 
 ```text
 incoming: B -> C
@@ -621,6 +665,32 @@ lane 0: A -> B
 lane 1: X -> Y
 ```
 
+### Rule: enforce lane limit with a flattened representative
+
+After each update, the buffer enforces `graph_lane_limit`. If the active lane
+count is over the limit, the cap lane is marked flattened and the stored lane
+snapshot is truncated at the cap:
+
+```text
+limit = 3
+
+before:
+lane 0: A -> B
+lane 1: C -> D
+lane 2: E -> F
+lane 3: X -> Y
+
+after:
+lane 0: A -> B
+lane 1: C -> D
+lane 2: X -> Y  (flattened)
+```
+
+Flattened lanes keep the graph bounded without a separate compressed-parent
+data structure. Their topology is still ordinary `Chunk` topology; the
+`is_flattened` flag tells rendering and lane-reference code that the lane also
+stands for hidden lanes to its right.
+
 ## Renderer Passes
 
 `render_graph_projection` is the main graph-symbol renderer. It renders only
@@ -638,8 +708,9 @@ prev = history[delta - 1], if any
 last = history[delta]
 ```
 
-`last` is the lane state for the row. `prev` is used to decide whether a dummy
-lane should draw a branch-up curve.
+`last` is the lane state for the row. `prev` and `next` are used to decide
+whether a dummy lane should draw a branch-up curve and whether merge closeout
+symbols should target a flattened cap lane.
 
 ### Pass 2: handle uncommitted row
 
@@ -658,7 +729,8 @@ not stable enough to show it.
 Before drawing lanes, the renderer collects `branching_lanes`. These are dummy
 lanes in the current snapshot that need a branch-up curve because the previous
 snapshot showed an active single-parent lane or because the lane newly
-appeared.
+appeared. Flattened lanes are tracked separately so bridge and pipe symbols can
+use dotted variants.
 
 ```text
 prev:
@@ -696,6 +768,10 @@ else:
   draw vertical pipe if the lane still has parents
 ```
 
+If a lane is flattened in the previous, current, or next snapshot, renderer
+helpers use dotted symbols for that lane and route closeout drawing back to the
+cap lane.
+
 ### Pass 5: fallback commit marker
 
 If the row alias was not found in the snapshot, the renderer still draws a
@@ -713,7 +789,7 @@ rendered row.
 When the row alias is found, marker selection is:
 
 ```text
-if two parents and no branch label:
+if row.is_merge and no branch label:
   graph::MERGE
 else if any branch label:
   graph::COMMIT_BRANCH
@@ -737,6 +813,8 @@ ordinary commit:                   o
 
 Branch labels have higher precedence than the merge marker. This is why a
 merge commit at a branch tip can show the branch dot instead of the merge dot.
+`row.is_merge` comes from Git commit metadata, not from rendered lane shape.
+That matters when a row is represented by a flattened lane.
 
 ## Caveats And Examples
 
