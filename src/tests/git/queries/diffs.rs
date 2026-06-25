@@ -187,23 +187,6 @@ fn workdir_and_staged_diffs_share_the_status_matrix_without_requerying_paths() {
 }
 
 #[test]
-fn workdir_diff_expands_untracked_directories_to_file_rows() {
-    let (path, repo) = temp_repo("untracked-directory-expansion");
-    write(&path, "tracked.txt", "base\n");
-    commit(&repo, "tracked.txt", "initial");
-    write(&path, "scratch/one.txt", "one\n");
-    write(&path, "scratch/nested/two.txt", "two\n");
-
-    let changes = get_filenames_diff_at_workdir(&repo).unwrap();
-
-    assert_contains_path(&changes.unstaged.added, "scratch/one.txt");
-    assert_contains_path(&changes.unstaged.added, "scratch/nested/two.txt");
-    assert!(!changes.unstaged.added.iter().any(|path| path == "scratch"));
-
-    let _ = fs::remove_dir_all(path);
-}
-
-#[test]
 fn workdir_diff_expands_untracked_directories_without_ignored_files() {
     let (path, repo) = temp_repo("untracked-directory-ignore");
     write(&path, ".gitignore", "*.ignored\n");
@@ -216,6 +199,7 @@ fn workdir_diff_expands_untracked_directories_without_ignored_files() {
 
     assert_contains_path(&changes.unstaged.added, "scratch/one.txt");
     assert_contains_path(&changes.unstaged.added, "scratch/nested/two.txt");
+    assert!(!changes.unstaged.added.iter().any(|path| path == "scratch"));
     assert!(!changes.unstaged.added.iter().any(|path| path.ends_with("skip.ignored")));
 
     let _ = fs::remove_dir_all(path);
