@@ -131,7 +131,7 @@ impl Oids {
     }
 
     pub fn get_alias_by_prefix(&self, prefix: &str) -> Option<u32> {
-        (!prefix.is_empty()).then(|| self.alias_oids.iter().position(|oid| matches_ascii_hex_prefix(oid, prefix))).flatten().and_then(|alias| u32::try_from(alias).ok())
+        is_git_hex_prefix(prefix).then(|| self.alias_oids.iter().position(|oid| matches_ascii_hex_prefix(oid, prefix))).flatten().and_then(|alias| u32::try_from(alias).ok())
     }
 
     pub fn is_zero(&self, oid: &ObjectId) -> bool {
@@ -145,6 +145,10 @@ fn reserve_vec<T>(vec: &mut Vec<T>, target_len: usize) {
 
 fn matches_ascii_hex_prefix(oid: &ObjectId, prefix: &str) -> bool {
     prefix.bytes().enumerate().all(|(idx, byte)| ascii_hex_nibble(byte).zip(oid_hex_nibble(oid, idx)).is_some_and(|(prefix, oid)| prefix == oid))
+}
+
+fn is_git_hex_prefix(prefix: &str) -> bool {
+    !prefix.is_empty() && prefix.as_bytes().iter().all(u8::is_ascii_hexdigit)
 }
 
 fn oid_hex_nibble(oid: &ObjectId, idx: usize) -> Option<u8> {
