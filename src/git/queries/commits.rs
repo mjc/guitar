@@ -73,7 +73,10 @@ pub fn get_sorted_oids(batcher: &mut Batcher, oids: &mut Oids, sorted: &mut Vec<
     }
 
     sorted.reserve(fetched);
-    sorted.extend(scratch.iter().map(|commit| commit.alias));
+
+    for commit in scratch.iter() {
+        sorted.push(commit.alias);
+    }
 }
 
 // Return the current branch name, or None when HEAD is detached.
