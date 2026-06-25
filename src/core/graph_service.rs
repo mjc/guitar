@@ -18,7 +18,7 @@ use git2::Oid;
 use im::HashSet;
 use smallvec::SmallVec;
 use std::{
-    collections::{HashMap, HashSet as StdHashSet},
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -571,40 +571,8 @@ fn pane_rows(pane: GraphPane, walk_ctx: &Walker) -> Vec<GraphPaneRow> {
 
 fn pane_window_rows(pane: GraphPane, walk_ctx: &Walker, start: usize, end: usize) -> (usize, Vec<GraphPaneRow>) {
     match pane {
-        GraphPane::Branches => {
-            let mut local: Vec<_> = walk_ctx.branches_local.iter().flat_map(|(&alias, branches)| branches.iter().map(move |branch| (alias, branch, true))).collect();
-            let mut remote: Vec<_> = walk_ctx.branches_remote.iter().flat_map(|(&alias, branches)| branches.iter().map(move |branch| (alias, branch, false))).collect();
-            local.sort_by(|a, b| a.1.cmp(b.1));
-            remote.sort_by(|a, b| a.1.cmp(b.1));
-            let total = local.len() + remote.len();
-            let window = pane_window(start, end, total);
-            let selected: Vec<_> = local.iter().chain(remote.iter()).skip(window.start).take(window.len()).copied().collect();
-            let index_map = alias_indices_for(walk_ctx, selected.iter().map(|(alias, _, _)| *alias));
-            let rows = selected
-                .into_iter()
-                .map(|(alias, name, is_local)| GraphPaneRow::Branch {
-                    alias,
-                    name: name.clone(),
-                    is_local,
-                    lane: walk_ctx.branches_lanes.get(&alias).copied(),
-                    graph_index: index_map.get(&alias).copied(),
-                })
-                .collect();
-            (total, rows)
-        },
-        GraphPane::Tags => {
-            let mut rows: Vec<_> = walk_ctx.tags_local.iter().flat_map(|(&alias, tags)| tags.iter().map(move |tag| (alias, tag))).collect();
-            rows.sort_by(|a, b| a.1.cmp(b.1));
-            let total = rows.len();
-            let window = pane_window(start, end, total);
-            let selected: Vec<_> = rows.iter().skip(window.start).take(window.len()).copied().collect();
-            let index_map = alias_indices_for(walk_ctx, selected.iter().map(|(alias, _)| *alias));
-            let rows = selected
-                .into_iter()
-                .map(|(alias, name)| GraphPaneRow::Tag { alias, name: name.clone(), lane: walk_ctx.tags_lanes.get(&alias).copied(), graph_index: index_map.get(&alias).copied() })
-                .collect();
-            (total, rows)
-        },
+        GraphPane::Branches => branch_pane_rows(walk_ctx, start, end),
+        GraphPane::Tags => tag_pane_rows(walk_ctx, start, end),
         GraphPane::Stashes => {
             let total = walk_ctx.oids.stashes.len();
             let window = pane_window(start, end, total);
@@ -651,6 +619,40 @@ fn pane_window_rows(pane: GraphPane, walk_ctx: &Walker, start: usize, end: usize
             (total, rows)
         },
     }
+}
+
+fn branch_pane_rows(walk_ctx: &Walker, start: usize, end: usize) -> (usize, Vec<GraphPaneRow>) {
+    let mut branches: Vec<_> = walk_ctx.branches_local.iter().flat_map(|(&alias, branches)| branches.iter().map(move |branch| (alias, branch, true))).collect();
+    let mut remotes: Vec<_> = walk_ctx.branches_remote.iter().flat_map(|(&alias, branches)| branches.iter().map(move |branch| (alias, branch, false))).collect();
+    branches.sort_by(|a, b| a.1.cmp(b.1));
+    remotes.sort_by(|a, b| a.1.cmp(b.1));
+
+    let total = branches.len() + remotes.len();
+    let window = pane_window(start, end, total);
+    let selected: Vec<_> = branches.iter().chain(remotes.iter()).skip(window.start).take(window.len()).copied().collect();
+    let index_map = alias_indices_for(walk_ctx, selected.iter().map(|(alias, _, _)| *alias));
+    let rows = selected
+        .into_iter()
+        .map(|(alias, name, is_local)| GraphPaneRow::Branch { alias, name: name.clone(), is_local, lane: walk_ctx.branches_lanes.get(&alias).copied(), graph_index: index_map.get(&alias).copied() })
+        .collect();
+
+    (total, rows)
+}
+
+fn tag_pane_rows(walk_ctx: &Walker, start: usize, end: usize) -> (usize, Vec<GraphPaneRow>) {
+    let mut tags: Vec<_> = walk_ctx.tags_local.iter().flat_map(|(&alias, tags)| tags.iter().map(move |tag| (alias, tag))).collect();
+    tags.sort_by(|a, b| a.1.cmp(b.1));
+
+    let total = tags.len();
+    let window = pane_window(start, end, total);
+    let selected: Vec<_> = tags.iter().skip(window.start).take(window.len()).copied().collect();
+    let index_map = alias_indices_for(walk_ctx, selected.iter().map(|(alias, _)| *alias));
+    let rows = selected
+        .into_iter()
+        .map(|(alias, name)| GraphPaneRow::Tag { alias, name: name.clone(), lane: walk_ctx.tags_lanes.get(&alias).copied(), graph_index: index_map.get(&alias).copied() })
+        .collect();
+
+    (total, rows)
 }
 
 fn pane_window(start: usize, end: usize, total: usize) -> std::ops::Range<usize> {
@@ -721,23 +723,7 @@ fn alias_indices_for<I>(walk_ctx: &Walker, aliases: I) -> HashMap<u32, usize>
 where
     I: IntoIterator<Item = u32>,
 {
-    let mut wanted: StdHashSet<u32> = aliases.into_iter().collect();
-    let mut indices = HashMap::with_capacity(wanted.len());
-
-    if wanted.is_empty() {
-        return indices;
-    }
-
-    for (idx, &alias) in walk_ctx.oids.get_sorted_aliases().iter().enumerate() {
-        if wanted.remove(&alias) {
-            indices.insert(alias, idx);
-            if wanted.is_empty() {
-                break;
-            }
-        }
-    }
-
-    indices
+    aliases.into_iter().filter_map(|alias| walk_ctx.oids.get_graph_index_by_alias(alias).map(|index| (alias, index))).collect()
 }
 
 fn latest_reflogs_by_alias(walk_ctx: &Walker) -> HashMap<u32, HeadReflogAliasEntry> {
