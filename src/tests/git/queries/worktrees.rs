@@ -1,13 +1,22 @@
 use super::*;
 use crate::{
-    core::oids::git2_to_gix_oid,
+    core::{oids::git2_to_gix_oid, worktrees::WorktreeEntry},
     git::{
         actions::worktrees::{create_worktree, lock_worktree, remove_worktree, unlock_worktree},
         queries::commits::get_current_branch,
+        queries::helpers::UncommittedChanges,
         test_support::{TestDir, commit_file, init_repo_at, linked_worktree_fixture, stage_path, write_workdir_file},
     },
 };
 use std::fs;
+
+fn entry<'a>(entries: &'a [WorktreeEntry], name: &str) -> &'a WorktreeEntry {
+    entries.iter().find(|entry| entry.name == name).unwrap()
+}
+
+fn main_entry(entries: &[WorktreeEntry]) -> &WorktreeEntry {
+    entries.iter().find(|entry| entry.is_main()).unwrap()
+}
 
 #[test]
 fn lists_main_and_linked_worktrees_with_stable_metadata() {
@@ -43,13 +52,13 @@ fn lists_main_and_linked_worktrees_with_stable_metadata() {
 }
 
 #[test]
-fn marks_current_linked_worktree() {
+fn linked_worktree_current_dirty_and_metadata_policy() {
     let dir = TestDir::new("worktree-current");
     let fixture = linked_worktree_fixture(&dir, "feature");
 
     let entries = list_worktrees(&fixture.linked_repo, Some(&fixture.linked_path)).unwrap();
-    let linked = entries.iter().find(|entry| entry.name == "feature").unwrap();
-    let main = entries.iter().find(|entry| entry.is_main()).unwrap();
+    let linked = entry(&entries, "feature");
+    let main = main_entry(&entries);
 
     assert!(linked.is_current);
     assert_eq!(linked.branch.as_deref(), Some("feature"));
@@ -57,82 +66,52 @@ fn marks_current_linked_worktree() {
     assert!(main.is_main());
     assert!(!main.is_current);
     assert_eq!(main.head, Some(git2_to_gix_oid(fixture.base)));
-}
 
-#[test]
-fn marks_dirty_worktrees_when_staged_files_exist() {
-    let dir = TestDir::new("worktree-staged");
-    let fixture = linked_worktree_fixture(&dir, "feature");
+    let uncommitted = UncommittedChanges { is_clean: false, ..Default::default() };
+    let metadata_entries = list_worktrees_metadata_with_current_dirty(&fixture.linked_repo, Some(&fixture.linked_path), &uncommitted).unwrap();
+    let path_entries = list_worktrees_metadata_with_current_dirty_from_path(&fixture.linked_path, Some(&fixture.linked_path), &uncommitted).unwrap();
+    let metadata_linked = entry(&metadata_entries, "feature");
+    let metadata_main = main_entry(&metadata_entries);
+    let path_linked = entry(&path_entries, "feature");
+
+    assert!(metadata_linked.is_current);
+    assert!(metadata_linked.is_dirty);
+    assert!(path_linked.is_current);
+    assert!(path_linked.is_dirty);
+    assert!(!metadata_main.is_current);
+    assert!(!metadata_main.is_dirty);
 
     write_workdir_file(&fixture.linked_repo, "staged.txt", "staged\n");
     stage_path(&fixture.linked_repo, "staged.txt");
-
     let entries = list_worktrees(&fixture.repo, Some(&fixture.repo_path)).unwrap();
-    let linked = entries.iter().find(|entry| entry.name == "feature").unwrap();
-
+    let linked = entry(&entries, "feature");
     assert!(linked.is_dirty);
-    assert!(linked.is_linked());
 }
 
 #[test]
-fn marks_dirty_main_worktree_when_staged_files_exist() {
+fn main_worktree_metadata_skips_dirty_scan_but_full_listing_marks_dirty() {
     let dir = TestDir::new("worktree-dirty");
-    let repo_path = dir.join("repo");
-    let repo = init_repo_at(&repo_path);
-    commit_file(&repo, "file.txt", "hello\n", "initial");
-
-    write_workdir_file(&repo, "staged.txt", "staged\n");
-    stage_path(&repo, "staged.txt");
-
-    let entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
-    let main = entries.iter().find(|entry| entry.is_main()).unwrap();
-
-    assert!(main.is_current);
-    assert!(main.is_dirty);
-}
-
-#[test]
-fn metadata_listing_skips_dirty_scan_but_keeps_identity() {
-    let dir = TestDir::new("worktree-metadata");
     let repo_path = dir.join("repo");
     let repo = init_repo_at(&repo_path);
     let oid = commit_file(&repo, "file.txt", "hello\n", "initial");
 
     fs::write(repo_path.join("untracked.txt"), "extra\n").unwrap();
-
     let entries = list_worktrees_metadata(&repo, Some(&repo_path)).unwrap();
-    let main = entries.iter().find(|entry| entry.is_main()).unwrap();
+    let main = main_entry(&entries);
 
     assert!(main.is_current);
     assert_eq!(main.head, Some(git2_to_gix_oid(oid)));
     assert_eq!(main.branch.as_deref(), get_current_branch(&repo).as_deref());
     assert!(!main.is_dirty);
-}
 
-#[test]
-fn metadata_listing_can_mark_current_worktree_from_uncommitted_state() {
-    let dir = TestDir::new("worktree-current-dirty-metadata");
-    let fixture = linked_worktree_fixture(&dir, "feature");
+    write_workdir_file(&repo, "staged.txt", "staged\n");
+    stage_path(&repo, "staged.txt");
 
-    let entries =
-        list_worktrees_metadata_with_current_dirty(&fixture.linked_repo, Some(&fixture.linked_path), &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() })
-            .unwrap();
-    let path_entries = list_worktrees_metadata_with_current_dirty_from_path(
-        &fixture.linked_path,
-        Some(&fixture.linked_path),
-        &crate::git::queries::helpers::UncommittedChanges { is_clean: false, ..Default::default() },
-    )
-    .unwrap();
-    let linked = entries.iter().find(|entry| entry.name == "feature").unwrap();
-    let main = entries.iter().find(|entry| entry.is_main()).unwrap();
-    let path_linked = path_entries.iter().find(|entry| entry.name == "feature").unwrap();
+    let entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
+    let main = main_entry(&entries);
 
-    assert!(linked.is_current);
-    assert!(linked.is_dirty);
-    assert!(path_linked.is_current);
-    assert!(path_linked.is_dirty);
-    assert!(!main.is_current);
-    assert!(!main.is_dirty);
+    assert!(main.is_current);
+    assert!(main.is_dirty);
 }
 
 #[test]
@@ -146,7 +125,7 @@ fn reports_lock_reason_and_prunability_for_stale_worktrees() {
     lock_worktree(&repo, "feature", Some("keep it")).unwrap();
 
     let locked_entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
-    let locked = locked_entries.iter().find(|entry| entry.name == "feature").unwrap();
+    let locked = entry(&locked_entries, "feature");
     assert_eq!(locked.locked_reason.as_deref(), Some("keep it"));
     assert!(!locked.can_remove());
 
@@ -159,7 +138,7 @@ fn reports_lock_reason_and_prunability_for_stale_worktrees() {
     fs::remove_dir_all(&stale_path).unwrap();
 
     let entries = list_worktrees(&repo, Some(&repo_path)).unwrap();
-    let stale = entries.iter().find(|entry| entry.name == "stale").unwrap();
+    let stale = entry(&entries, "stale");
     assert!(!stale.is_valid);
     assert!(stale.is_prunable);
 }
