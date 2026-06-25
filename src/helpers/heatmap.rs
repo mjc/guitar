@@ -66,7 +66,7 @@ pub fn build_heatmap(repo: &gix::Repository, oids: impl IntoIterator<Item = gix:
 }
 
 pub fn build_heatmap_from_sorted_aliases(repo: &gix::Repository, oids: &Oids) -> [[usize; WEEKS]; DAYS] {
-    build_heatmap_from_counts(commits_per_day(repo, oids.get_sorted_aliases().iter().map(|alias| *oids.get_oid_by_alias(*alias))))
+    build_heatmap_from_counts(commits_per_day(repo, oids.get_sorted_aliases().iter().map(|alias| *oids.get_gix_oid_by_alias(*alias))))
 }
 
 fn build_heatmap_from_counts(counts: [usize; TOTAL_DAYS]) -> [[usize; WEEKS]; DAYS] {
