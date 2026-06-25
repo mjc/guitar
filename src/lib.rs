@@ -18,6 +18,8 @@ pub mod core {
 pub mod git {
     pub mod auth;
     pub mod gix;
+    #[cfg(test)]
+    pub mod test_support;
     pub mod actions {
         pub mod branching;
         pub mod checkout;
