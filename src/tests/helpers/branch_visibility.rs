@@ -1,6 +1,7 @@
 use super::*;
 use std::{
     fs,
+    path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -60,6 +61,15 @@ fn prune_hidden_branches_removes_names_that_no_longer_exist() {
 
     assert!(prune_hidden_branches(&mut hidden_names, &current));
     assert_eq!(sorted_unique(hidden_names.into_iter().collect::<Vec<_>>()), vec!["main", "topic"]);
+}
+
+#[test]
+fn branch_name_from_ref_accepts_only_utf8_branch_refs() {
+    assert_eq!(branch_name_from_ref(b"refs/heads/main"), Some("main"));
+    assert_eq!(branch_name_from_ref(b"refs/remotes/origin/main"), Some("origin/main"));
+    assert_eq!(branch_name_from_ref(b"refs/tags/v1.0.0"), None);
+    assert_eq!(branch_name_from_ref(b"refs/heads/"), None);
+    assert_eq!(branch_name_from_ref(b"refs/heads/\xff"), None);
 }
 
 #[test]

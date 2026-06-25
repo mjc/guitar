@@ -1,7 +1,10 @@
-use super::*;
+use crate::core::oids::git2_to_gix_oid;
+use crate::git::queries::reflogs::get_head_reflog_entries;
+use git2::Oid;
 use git2::{Repository, ResetType, Signature};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -34,16 +37,35 @@ fn commit(repo: &Repository, file: &str, message: &str) -> Oid {
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents).unwrap()
 }
 
+fn append_reflog_entry(repo: &Repository, new_oid: Oid, message: &str) {
+    let log_path = repo.path().join("logs/HEAD");
+    let mut log = fs::OpenOptions::new().append(true).open(log_path).unwrap();
+    writeln!(log, "{} {} Skip <skip@example.com> 0 +0000\t{}", Oid::zero(), new_oid, message).unwrap();
+}
+
 #[test]
-fn head_reflog_keeps_commit_after_reset() {
-    let (_path, repo) = temp_repo("lost-head");
+fn head_reflog_skips_entries_that_no_longer_point_to_commits() {
+    let (_path, repo) = temp_repo("skip-non-commit");
     let base = commit(&repo, "file.txt", "base");
     let lost = commit(&repo, "file.txt", "lost");
     let base_commit = repo.find_commit(base).unwrap();
     repo.reset(base_commit.as_object(), ResetType::Hard, None).unwrap();
 
-    let entries = get_head_reflog_entries(&repo).unwrap();
+    let skipped_oid = repo.blob(b"skip-me").unwrap();
+    append_reflog_entry(&repo, skipped_oid, "skip-me");
 
-    assert!(entries.iter().any(|entry| entry.new_oid == lost && entry.selector.starts_with("HEAD@{")));
+    let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
+    let entries = get_head_reflog_entries(&gix_repo).unwrap();
+
+    assert!(entries.iter().any(|entry| entry.new_oid == git2_to_gix_oid(lost)));
+    assert!(!entries.iter().any(|entry| entry.message == "skip-me"));
+    assert_eq!(entries.first().map(|entry| entry.selector.as_str()), Some("HEAD@{1}"));
     assert_eq!(repo.head().unwrap().target(), Some(base));
+}
+
+#[test]
+fn missing_head_reflog_returns_an_error() {
+    let (_path, repo) = temp_repo("missing");
+    let gix_repo = gix::open(repo.workdir().unwrap_or(repo.path())).unwrap();
+    assert!(get_head_reflog_entries(&gix_repo).is_err());
 }
