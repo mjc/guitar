@@ -12,7 +12,8 @@ pub fn list_submodules(repo: &Repository) -> Result<Vec<SubmoduleEntry>, git2::E
     let workdir = repo.workdir().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     let mut entries = Vec::new();
 
-    for submodule in repo.submodules()? {
+    for mut submodule in repo.submodules()? {
+        submodule.reload(true)?;
         let path = submodule.path().to_path_buf();
         let name = submodule.name().map(str::to_string).unwrap_or_else(|| path.display().to_string());
         let status = status_for(repo, &name, &path);

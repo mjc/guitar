@@ -64,6 +64,10 @@ fn commit_index(repo: &Repository, message: &str) -> Oid {
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents).unwrap()
 }
 
+fn reopen(repo: &Repository) -> Repository {
+    Repository::open(repo.workdir().unwrap()).unwrap()
+}
+
 fn init_repo_at(path: &Path) -> Repository {
     fs::create_dir_all(path).unwrap();
     let repo = Repository::init(path).unwrap();
@@ -122,7 +126,7 @@ fn workdir_diff_marks_conflicted_paths() {
     checkout_new_branch(&repo, "feature");
     write(&path, "file.txt", "feature\n");
     commit(&repo, "file.txt", "feature");
-    checkout_branch(&repo, "master");
+    checkout_branch(&repo, "main");
     write(&path, "file.txt", "main\n");
     let main = commit(&repo, "file.txt", "main");
     checkout_branch(&repo, "feature");
@@ -259,6 +263,7 @@ fn commit_diff_lists_committed_submodule_pointer_change() {
     commit(&sub_repo, "file.txt", "advance child");
     stage_submodule_head(&parent, "deps/child").unwrap();
 
+    let parent = reopen(&parent);
     let commit_oid = commit_index(&parent, "update submodule pointer");
     let changes = get_filenames_diff_at_oid(&parent, commit_oid);
 
